@@ -4,7 +4,7 @@
 
 Windows 11 任务栏上的轻量 Codex 额度显示工具。查看独立账号的五小时／周额度、重置时间和最近成功更新时间；支持托盘详情、多个绑定账号、本地备注及 Codex 启停联动。
 
-**[下载 v0.1.0-beta](https://github.com/WanDa249/CPAplus-Quota/releases/tag/v0.1.0-beta)** · Windows x64 · 单 EXE · 免安装
+**[下载 v0.1.1-beta](https://github.com/WanDa249/CPAplus-Quota/releases/tag/v0.1.1-beta)** · Windows x64 · 单 EXE · 免安装
 
 这是独立的非官方客户端，不隶属于 OpenAI 或 Microsoft。需要支持用户额度接口的 CPA 服务和自己的 CPA API Key；不提供账号、注册服务或公共服务器。
 
@@ -56,5 +56,7 @@ Windows 11 任务栏上的轻量 Codex 额度显示工具。查看独立账号�
 在 Windows 11 x64 克隆仓库后，从 PowerShell 执行 `./build.ps1`，输出 `bin/CPAplusQuota.exe`。使用系统 .NET Framework C# 编译器和 WPF/WinForms，不需要 NuGet 或独立 SDK；字体和图标构建输入都在本仓库中。源码结构为 `src/`、`assets/`、`licenses/` 与 `build.ps1`。
 
 所需服务端接口为 `GET /v1/me/quotas` 和可选 `POST /v1/me/quotas/refresh`，都使用 Bearer 头，刷新用 `X-Quota-Account` 指定返回数据中的不透明账号别名。接口应由服务端按密钥绑定隔离并过滤敏感字段；本仓库不提供服务端实现。
+
+可执行 `./verify_visibility.ps1` 运行使用虚构数据的本地界面与显示模式检查；`./verify_visibility.ps1 -Geometry` 另会短暂显示测试窗，记录缩放及展开列表刷新时的窗口边界。测试隔离当前用户配置，不读取真实密钥或发送网络请求。
 
 隐私与本地存储详见 [PRIVACY.md](PRIVACY.md)。macOS 后续计划共用 Releases，当前不提供未经真实 Mac 验证的安装包。
