@@ -4,12 +4,16 @@
 
 ## 下载与安装
 
+首个通过双架构 CI 的测试包：[下载 Universal Beta](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39362148256/artifacts/12237708092)。[构建、测试与校验记录](VALIDATION.md)对应源码 `2e29093`，最低部署目标 macOS 13，已在 macOS 15.7.9 Runner 启动验证；macOS 13/14 实际运行仍待测试。
+
 1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
 2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.0-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。
 3. 将 `CPAplusQuota.app` 移入“应用程序”，双击启动。系统可能因缺少 Developer ID 与公证阻止启动。仅在明确核实来源、遵守设备或单位政策的受控测试中，按 macOS“隐私与安全性”提供的单次打开流程处理。不要关闭 Gatekeeper、移除隔离属性或关闭系统安全功能。系统拒绝或提示损坏时先停止并反馈。
 4. 首次输入 HTTPS 服务根地址与自己的 CPA API Key。普通网页地址不能代替兼容 API 地址。选择主账号；其他账号通过选择器查看。Key 保存到本机 Keychain。
 
 正式分发需要维护者的 Apple Developer Program 账号、Developer ID Application 证书、安全保存的签名凭据、Hardened Runtime、Apple 公证与 staple 流程。当前不具备这些条件；CI 通过不能解决普通用户的 Gatekeeper 信任问题。
+
+未签名 Beta 换版后，ad-hoc 代码身份可能变化，Keychain 可能重新要求授权；这也属于实体 Mac 升级测试范围。
 
 ## 日常操作
 

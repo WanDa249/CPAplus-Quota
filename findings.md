@@ -6,3 +6,4 @@
 - Verified identity constants from OpenAI primary source: https://github.com/openai/codex/blob/main/codex-rs/cli/src/desktop_app/mac.rs — com.openai.codex, team 2DC432GLL2. Require Apple anchored signature as well; no name/path-only matching.
 - NSWorkspace lifecycle notifications need workspace.notificationCenter. No Accessibility or screen recording needed for running-app mode.
 - gh authenticated as repository owner with repo/workflow scopes; independent clone and macos/native-beta branch created.
+- Actual CI validated macos-15 as arm64 and macos-15-intel as x86_64. Both run macOS 15.7.9, Xcode 16.4, Swift 6.1.2. No Apple SDK compiler errors were found; fixture readiness needed 30 seconds rather than five on a cold runner. Green run 39362148256 contains unsigned Universal Beta and both test/build/launch evidence artifacts. No desktop interaction acceptance implied.
