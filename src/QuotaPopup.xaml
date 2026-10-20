@@ -139,10 +139,10 @@
         </StackPanel>
       </Border>
       <DockPanel Margin="2,10,0,10">
-        <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Padding="8,5" AutomationProperties.Name="刷新"/>
+        <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Width="76" Padding="8,5" AutomationProperties.Name="刷新"/>
         <StackPanel VerticalAlignment="Center">
           <TextBlock x:Name="UpdatedText" FontSize="12" Foreground="{DynamicResource Muted}"/>
-          <TextBlock x:Name="CacheNote" FontSize="12" Margin="0,3,0,0"/>
+          <TextBlock x:Name="CacheNote" FontSize="12" MinHeight="18" Margin="0,3,0,0"/>
         </StackPanel>
       </DockPanel>
       <Expander x:Name="OtherAccounts" Foreground="{DynamicResource Muted}" FontSize="12" IsExpanded="False" BorderThickness="0">
@@ -150,7 +150,7 @@
           <StackPanel x:Name="AccountRows"/>
         </ScrollViewer>
       </Expander>
-      <TextBlock x:Name="FailureText" FontSize="12" TextWrapping="Wrap" Margin="2,8,2,0" Foreground="{DynamicResource Warning}" Visibility="Collapsed"/>
+      <TextBlock x:Name="FailureText" FontSize="12" Height="18" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="2,8,2,0" Foreground="{DynamicResource Warning}" Visibility="Hidden"/>
       <Button x:Name="ConnectButton" Content="打开设置" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,7,0,0"/>
     </StackPanel>
     <StackPanel x:Name="KeyPage" Visibility="Collapsed">

@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Web.Script.Serialization;
 
 internal sealed class QuotaPopup : Window
@@ -22,6 +23,8 @@ internal sealed class QuotaPopup : Window
     private readonly HashSet<string> expanded=new HashSet<string>();
     private QuotaResult data;
     private string selected;
+    // WM_SIZE can update Height's base value mid-animation; retain the content target.
+    private double desiredHeight=double.NaN;
     private bool closing,editingKey,paused;
     internal event EventHandler RefreshRequested,ConfigureRequested,PinRequested,NotesChanged;
     internal event Action<int> ModeRequested;
@@ -31,7 +34,7 @@ internal sealed class QuotaPopup : Window
 
     internal QuotaPopup()
     {
-        Title="CPAplus 额度";Width=368;SizeToContent=SizeToContent.Height;
+        Title="CPAplus 额度";Width=368;Height=400;SizeToContent=SizeToContent.Manual;
         WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;
         WindowStartupLocation=WindowStartupLocation.Manual;Background=Brushes.Transparent;
         FontFamily=UiFonts.Popup;
@@ -41,7 +44,9 @@ internal sealed class QuotaPopup : Window
         for(int i=0;i<keys.Length;i++)Resources[keys[i]]=Brush(colors[i]);
         Resources["MenuSurface"]=Brush(light?"#F5F7FA":"#2D333C");
         using(var stream=GetType().Assembly.GetManifestResourceStream("QuotaPopup.xaml"))root=(System.Windows.Controls.Border)XamlReader.Load(stream);
-        Content=root;
+        root.VerticalAlignment=VerticalAlignment.Top;
+        Content=new ScrollViewer {Content=root,VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Focusable=false};
+        root.SizeChanged+=delegate(object sender,SizeChangedEventArgs e){if(e.HeightChanged)ResizePopup(e.NewSize.Height);};
         TextOptions.SetTextFormattingMode(root,TextFormattingMode.Ideal);
         TextOptions.SetTextRenderingMode(root,TextRenderingMode.Grayscale);
         UseLayoutRounding=true;
@@ -66,7 +71,7 @@ internal sealed class QuotaPopup : Window
         SourceInitialized+=delegate {ApplyMaterial();};
         SizeChanged+=delegate {if(IsVisible&&!Topmost)PositionPopup();};
         PreviewKeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Escape){if(editingKey)Settings(true);else Hide();e.Handled=true;}};
-        IsVisibleChanged+=delegate {if(!IsVisible)ClearKeyDraft();};
+        IsVisibleChanged+=delegate {if(!IsVisible){BeginAnimation(HeightProperty,null);if(!double.IsNaN(desiredHeight))Height=desiredHeight;ClearKeyDraft();}};
         Closing+=delegate(object sender,System.ComponentModel.CancelEventArgs e){if(!closing){e.Cancel=true;Hide();}};
         System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(this);
         Render();
@@ -92,7 +97,7 @@ internal sealed class QuotaPopup : Window
     }
     internal void ShowPopup()
     {
-        if(!IsVisible){Settings(false);Show();PositionPopup();}
+        if(!IsVisible){Settings(false);root.Measure(new Size(Width,double.PositiveInfinity));ResizePopup(root.DesiredSize.Height);Show();PositionPopup();}
         Activate();WriteEvidence();
     }
     private void PositionPopup()
@@ -103,7 +108,18 @@ internal sealed class QuotaPopup : Window
         B<ScrollViewer>("OtherScroll").MaxHeight=Math.Max(90,Math.Min(235,MaxHeight-370));
         Left=area.Right*scale-ActualWidth-12;Top=area.Bottom*scale-ActualHeight-12;
     }
-    internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Visibility=Visibility.Collapsed;Render();}
+    private void ResizePopup(double contentHeight)
+    {
+        double target=Math.Min(MaxHeight,contentHeight);
+        if(Math.Abs(target-desiredHeight)<0.5)return;
+        desiredHeight=target;double current=ActualHeight;Height=target;
+        if(IsVisible&&current>0){
+            var animation=new DoubleAnimation(current,target,TimeSpan.FromMilliseconds(180)) {EasingFunction=new CubicEase {EasingMode=EasingMode.EaseOut},FillBehavior=FillBehavior.Stop};
+            animation.Completed+=delegate {BeginAnimation(HeightProperty,null);Height=desiredHeight;};
+            BeginAnimation(HeightProperty,animation);
+        }else BeginAnimation(HeightProperty,null);
+    }
+    internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Visibility=Visibility.Hidden;Render();}
     internal void SetPrimary(string alias){selected=alias;Render();}
     internal void ClearData(){data=null;selected=null;expanded.Clear();B<Expander>("OtherAccounts").IsExpanded=false;Render();}
     internal void SetPinned(bool value){Topmost=value;B<CheckBox>("PinSetting").IsChecked=value;}
@@ -136,7 +152,7 @@ internal sealed class QuotaPopup : Window
     {
         B<TextBlock>("FailureText").Text=text;
         B<TextBlock>("FailureText").Foreground=Resource("Muted");
-        B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?Visibility.Collapsed:Visibility.Visible;
+        B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?Visibility.Hidden:Visibility.Visible;
     }
     internal void SetBusy(bool busy){B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"查询中…":"刷新";}
     internal void SetStatus(string text,bool error)
@@ -157,7 +173,7 @@ internal sealed class QuotaPopup : Window
         B<TextBlock>("UnavailableHint").Text=!empty&&!a.supported?"此账号暂不支持额度查询":"上方为最近记录，账号当前不参与调用。";
         B<TextBlock>("UpdatedText").Text=empty?(paused?"Codex 启动后自动更新":"尚未连接"):AccountPresentation.Updated(a.lastSuccessAt);
         string cache=empty?"":AccountPresentation.CacheState(a);
-        B<TextBlock>("CacheNote").Text=cache;B<TextBlock>("CacheNote").Visibility=cache.Length==0?Visibility.Collapsed:Visibility.Visible;
+        B<TextBlock>("CacheNote").Text=cache;B<TextBlock>("CacheNote").Visibility=cache.Length==0?Visibility.Hidden:Visibility.Visible;
         B<TextBlock>("CacheNote").Foreground=Resource("Warning");
         B<Button>("ConnectButton").Visibility=empty?Visibility.Visible:Visibility.Collapsed;
         if(!empty){Metric("Five",a,a.fiveHour);Metric("Week",a,a.weekly);}

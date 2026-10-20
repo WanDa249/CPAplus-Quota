@@ -26,6 +26,12 @@ internal static class VisibilityProbe
         return list;
     }
     private static string Reason(string mode,bool foreground,params bool[] minimized){return (string)Call("DesktopMonitor","VisibilityReason",null,Mode(mode),Windows(minimized),foreground);}
+    private static void Pump(int milliseconds)
+    {
+        var frame=new System.Windows.Threading.DispatcherFrame();
+        var timer=new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Send) {Interval=TimeSpan.FromMilliseconds(milliseconds)};
+        timer.Tick+=delegate {frame.Continue=false;};timer.Start();System.Windows.Threading.Dispatcher.PushFrame(frame);timer.Stop();
+    }
 
     [STAThread] private static int Main()
     {
@@ -58,7 +64,7 @@ internal static class VisibilityProbe
             bool rejected=false;try{property.SetValue(monitor,Enum.ToObject(T("VisibilityMode"),99),null);}catch(TargetInvocationException error){rejected=error.InnerException is ArgumentOutOfRangeException;}
             Require(rejected&&(int)Call("DesktopMonitor","LoadMode",null)==4,"invalid mode cannot overwrite saved choice");
             using(var key=Registry.CurrentUser.OpenSubKey(@"Software\CPAplusQuota"))Require((string)key.GetValue("ServerUrl")=="https://quota.example.invalid","saving display mode preserves server configuration");
-            popup=Activator.CreateInstance(T("QuotaPopup"),true);var root=(FrameworkElement)((Window)popup).Content;
+            popup=Activator.CreateInstance(T("QuotaPopup"),true);var root=(FrameworkElement)T("QuotaPopup").GetField("root",Flags).GetValue(popup);
             var combo=(ComboBox)root.FindName("DisplayMode");
             Require(combo.Items.Count==5&&combo.Items[3].ToString()=="Codex 未最小化时显示"&&combo.Items[4].ToString()=="隐藏任务栏额度","actual settings list contains both choices");
             int selected=-1;
@@ -102,7 +108,6 @@ internal static class VisibilityProbe
             foreach(string flag in new[]{"available","availabilityKnown"})T("QuotaAccount").GetProperty(flag).SetValue(account,true,null);
             T("QuotaAccount").GetProperty("alias").SetValue(account,"test-account",null);
             var five=Activator.CreateInstance(T("QuotaWindow"),true);T("QuotaWindow").GetProperty("remainingPercent").SetValue(five,62d,null);T("QuotaAccount").GetProperty("fiveHour").SetValue(account,five,null);
-            IntPtr foreground=GetForegroundWindow();
             Call("TaskbarStrip","UpdateData",strip,result,null);
             Call("TaskbarStrip","Present",strip,new System.Drawing.Rectangle(-32000,-32000,1000,48),-32000,-31000,96);
             Require(!transition.Enabled,"first real offscreen render does not animate");
@@ -111,8 +116,37 @@ internal static class VisibilityProbe
             Require(transition.Enabled==SystemParameters.ClientAreaAnimation,"real changed-value render follows system animation preference");
             var elapsed=System.Diagnostics.Stopwatch.StartNew();while(elapsed.ElapsedMilliseconds<300){System.Windows.Forms.Application.DoEvents();System.Threading.Thread.Sleep(10);}
             Require(!transition.Enabled&&T("TaskbarStrip").GetField("transitionFrame",Flags).GetValue(strip)==null,"real layered-window animation finishes and releases its frame");
-            Require(GetForegroundWindow()==foreground,"real strip render and animation do not take focus");
+            Require(GetForegroundWindow()!=((System.Windows.Forms.Form)strip).Handle,"real strip render and animation do not take focus");
             ((System.Windows.Forms.Form)strip).Hide();
+            var extra=Activator.CreateInstance(T("QuotaAccount"),true);T("QuotaAccount").GetProperty("alias").SetValue(extra,"backup-test",null);accountList.Add(extra);
+            T("QuotaAccount").GetProperty("stale").SetValue(account,false,null);
+            Call("QuotaPopup","SetData",popup,result);
+            var window=(Window)popup;window.ShowActivated=false;window.Topmost=true;window.Left=-32000;window.Top=-32000;window.Show();Pump(350);
+            double restingHeight=window.ActualHeight,buttonWidth=refresh.ActualWidth;
+            Call("QuotaPopup","SetBusy",popup,true);Call("QuotaPopup","SetReadFeedback",popup,"正在查询额度…");Pump(250);
+            Require(Math.Abs(window.ActualHeight-restingHeight)<0.5&&Math.Abs(refresh.ActualWidth-buttonWidth)<0.5,"real refresh progress preserves popup height and button width");
+            Console.WriteLine("MEASURE stable refresh DIP before="+restingHeight+" busy="+window.ActualHeight+" buttonWidth="+buttonWidth);
+            Call("QuotaPopup","SetData",popup,result);Call("QuotaPopup","SetReadFeedback",popup,"额度已更新。");Call("QuotaPopup","SetBusy",popup,false);Pump(250);
+            Require(Math.Abs(window.ActualHeight-restingHeight)<0.5,"real refresh completion preserves popup height");
+            T("QuotaAccount").GetProperty("stale").SetValue(account,true,null);Call("QuotaPopup","SetData",popup,result);Call("QuotaPopup","SetReadFeedback",popup,"额度查询失败，保留上次结果；未更新成功时间。");Pump(250);
+            Require(Math.Abs(window.ActualHeight-restingHeight)<0.5,"stale and failed feedback preserve popup height");
+            var heights=new System.Collections.Generic.List<double>();window.SizeChanged+=delegate {heights.Add(window.ActualHeight);};
+            var others=(Expander)root.FindName("OtherAccounts");others.IsExpanded=true;window.UpdateLayout();double expansionStart=window.ActualHeight;Pump(45);double expansionMid=window.ActualHeight;Pump(250);double expandedHeight=window.ActualHeight;
+            Console.WriteLine("MEASURE popup DIP resting="+restingHeight+" expansionStart="+expansionStart+" mid="+expansionMid+" expanded="+expandedHeight+" root="+root.ActualHeight+" desired="+root.DesiredSize.Height+" align="+root.VerticalAlignment+" valid="+root.IsMeasureValid+" expander="+others.ActualHeight);
+            Require(expandedHeight>restingHeight+10,"real account expansion grows popup to fit content");
+            Require(heights.Exists(value=>value>restingHeight+0.5&&value<expandedHeight-0.5),"real expansion passes through intermediate height");
+            others.IsExpanded=false;Pump(300);Require(Math.Abs(window.ActualHeight-restingHeight)<0.5,"collapse returns to original height");
+            Call("QuotaPopup","Settings",popup,true);window.UpdateLayout();Pump(300);double settingsHeight=window.ActualHeight;
+            Require(Math.Abs(settingsHeight-root.ActualHeight)<0.5,"settings transition finishes at measured content height");
+            Call("QuotaPopup","Settings",popup,false);window.UpdateLayout();Pump(300);
+            Require(Math.Abs(window.ActualHeight-restingHeight)<0.5,"return from settings restores home height");
+            others.IsExpanded=true;window.UpdateLayout();Pump(45);double interruptedHeight=window.ActualHeight;
+            others.IsExpanded=false;window.UpdateLayout();double resumedHeight=window.ActualHeight;
+            Require(Math.Abs(resumedHeight-interruptedHeight)<2,"rapid reversal starts from current height without a jump");Pump(300);
+            Console.WriteLine("MEASURE reversal final="+window.ActualHeight+" base="+window.GetAnimationBaseValue(Window.HeightProperty)+" animated="+window.HasAnimatedProperties+" root="+root.ActualHeight);
+            Require(Math.Abs(window.ActualHeight-restingHeight)<0.5&&!window.HasAnimatedProperties,"rapid reversal completes and animation clocks are released");
+            others.IsExpanded=true;window.UpdateLayout();Pump(30);window.Hide();Require(!window.HasAnimatedProperties,"hiding popup clears resize animation");
+            Require(GetForegroundWindow()!=new System.Windows.Interop.WindowInteropHelper(window).Handle,"popup layout tests do not take focus");
             using(var key=Registry.CurrentUser.CreateSubKey(@"Software\CPAplusQuota"))key.SetValue("DisplayMode",99);
             Require((int)Call("DesktopMonitor","LoadMode",null)==0,"unknown saved choice falls back to original default");
             Console.WriteLine("TOTAL "+count+" checks PASS; no credentials read, no HTTP requests");return 0;
