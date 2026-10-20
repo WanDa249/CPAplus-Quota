@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
@@ -15,6 +16,8 @@ internal static class VisibilityProbe
     private static int count;
     [DllImport("advapi32.dll")] private static extern int RegOverridePredefKey(IntPtr key,IntPtr value);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [StructLayout(LayoutKind.Sequential)] private struct Rect {public int left,top,right,bottom;}
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window,out Rect rect);
     private static Type T(string name){return app.GetType(name,true);}
     private static object Mode(string name){return Enum.Parse(T("VisibilityMode"),name);}
     private static object Call(string type,string method,object instance,params object[] args){return T(type).GetMethod(method,Flags).Invoke(instance,args);}
@@ -33,7 +36,7 @@ internal static class VisibilityProbe
         timer.Tick+=delegate {frame.Continue=false;};timer.Start();System.Windows.Threading.Dispatcher.PushFrame(frame);timer.Stop();
     }
 
-    [STAThread] private static int Main()
+    [STAThread] private static int Main(string[] args)
     {
         string registry=@"Software\CPAplusQuotaVisibilityTests\"+Guid.NewGuid().ToString("N");
         object popup=null,strip=null;RegistryKey hive=null;
@@ -145,6 +148,27 @@ internal static class VisibilityProbe
             Require(Math.Abs(resumedHeight-interruptedHeight)<2,"rapid reversal starts from current height without a jump");Pump(300);
             Console.WriteLine("MEASURE reversal final="+window.ActualHeight+" base="+window.GetAnimationBaseValue(Window.HeightProperty)+" animated="+window.HasAnimatedProperties+" root="+root.ActualHeight);
             Require(Math.Abs(window.ActualHeight-restingHeight)<0.5&&!window.HasAnimatedProperties,"rapid reversal completes and animation clocks are released");
+            if(args.Length>0&&args[0]=="--geometry"){
+                ((TextBlock)root.FindName("Heading")).Text="CPAplus 本地动画验证";
+                window.Topmost=false;Call("QuotaPopup","PositionPopup",popup);Pump(300);
+                var hwnd=new System.Windows.Interop.WindowInteropHelper(window).Handle;Rect start;GetWindowRect(hwnd,out start);
+                var samples=new System.Collections.Generic.List<string>();var clock=System.Diagnostics.Stopwatch.StartNew();string phase="expand";int maxNative=0,maxRender=0,maxRefresh=0,refreshHeight=0;
+                Action<string> sample=kind=>{Rect r;GetWindowRect(hwnd,out r);int delta=Math.Abs(r.bottom-start.bottom);if(kind=="native")maxNative=Math.Max(maxNative,delta);else maxRender=Math.Max(maxRender,delta);if(phase=="expanded-refresh")maxRefresh=Math.Max(maxRefresh,Math.Abs(r.bottom-r.top-refreshHeight));samples.Add(clock.Elapsed.TotalMilliseconds.ToString("F2",System.Globalization.CultureInfo.InvariantCulture)+","+phase+","+kind+","+r.top+","+r.bottom+","+(r.bottom-r.top));};
+                System.Windows.Interop.HwndSourceHook hook=delegate(IntPtr h,int message,IntPtr w,IntPtr l,ref bool handled){if(message==0x47)sample("native");return IntPtr.Zero;};
+                var source=System.Windows.Interop.HwndSource.FromHwnd(hwnd);source.AddHook(hook);EventHandler rendered=delegate {sample("render");};System.Windows.Media.CompositionTarget.Rendering+=rendered;
+                try {
+                    others.IsExpanded=true;Pump(350);double openHeight=window.ActualHeight;Rect openBounds;GetWindowRect(hwnd,out openBounds);refreshHeight=openBounds.bottom-openBounds.top;phase="expanded-refresh";
+                    Call("QuotaPopup","SetBusy",popup,true);Call("QuotaPopup","SetReadFeedback",popup,"正在查询额度…");Pump(60);
+                    Call("QuotaPopup","SetData",popup,result);Call("QuotaPopup","SetPrimary",popup,"test-account");Call("QuotaPopup","SetReadFeedback",popup,"额度已更新。");Call("QuotaPopup","SetBusy",popup,false);Pump(350);
+                    Require(Math.Abs(window.ActualHeight-openHeight)<0.5,"expanded account refresh preserves popup height");
+                    phase="collapse";others.IsExpanded=false;Pump(350);
+                }finally{source.RemoveHook(hook);System.Windows.Media.CompositionTarget.Rendering-=rendered;}
+                string output=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","evidence",args.Length>1?args[1]:"native-geometry.csv"));
+                File.WriteAllLines(output,new[]{"ms,phase,kind,top,bottom,height"}.Concat(samples));
+                Console.WriteLine("GEOMETRY samples="+samples.Count+" maxNativeBottomDriftPx="+maxNative+" maxRenderBottomDriftPx="+maxRender+" maxExpandedRefreshHeightDriftPx="+maxRefresh);
+                Require(maxNative==0&&maxRender==0,"native and rendered bottom edge remains fixed during expand and collapse");
+                Require(maxRefresh==0,"expanded refresh has no transient height change in any recorded frame");
+            }
             others.IsExpanded=true;window.UpdateLayout();Pump(30);window.Hide();Require(!window.HasAnimatedProperties,"hiding popup clears resize animation");
             Require(GetForegroundWindow()!=new System.Windows.Interop.WindowInteropHelper(window).Handle,"popup layout tests do not take focus");
             using(var key=Registry.CurrentUser.CreateSubKey(@"Software\CPAplusQuota"))key.SetValue("DisplayMode",99);

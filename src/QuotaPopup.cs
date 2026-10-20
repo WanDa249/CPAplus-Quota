@@ -10,11 +10,15 @@ using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using System.Web.Script.Serialization;
 
 internal sealed class QuotaPopup : Window
 {
     [StructLayout(LayoutKind.Sequential)] private struct Margins { public int left,right,top,bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct WindowPosition {public IntPtr window,after;public int x,y,width,height;public uint flags;}
+    [StructLayout(LayoutKind.Sequential)] private struct WindowRect {public int left,top,right,bottom;}
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window,out WindowRect rect);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd,int attribute,ref int value,int size);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd,int attribute,out int value,int size);
     [DllImport("dwmapi.dll")] private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd,ref Margins value);
@@ -25,6 +29,8 @@ internal sealed class QuotaPopup : Window
     private string selected;
     // WM_SIZE can update Height's base value mid-animation; retain the content target.
     private double desiredHeight=double.NaN;
+    private bool resizing,resizeQueued;
+    private int resizeBottom;
     private bool closing,editingKey,paused;
     internal event EventHandler RefreshRequested,ConfigureRequested,PinRequested,NotesChanged;
     internal event Action<int> ModeRequested;
@@ -46,7 +52,11 @@ internal sealed class QuotaPopup : Window
         using(var stream=GetType().Assembly.GetManifestResourceStream("QuotaPopup.xaml"))root=(System.Windows.Controls.Border)XamlReader.Load(stream);
         root.VerticalAlignment=VerticalAlignment.Top;
         Content=new ScrollViewer {Content=root,VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Focusable=false};
-        root.SizeChanged+=delegate(object sender,SizeChangedEventArgs e){if(e.HeightChanged)ResizePopup(e.NewSize.Height);};
+        root.SizeChanged+=delegate(object sender,SizeChangedEventArgs e){
+            if(!e.HeightChanged||resizeQueued)return;
+            resizeQueued=true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded,new Action(delegate {resizeQueued=false;if(!closing)ResizePopup(root.ActualHeight);}));
+        };
         TextOptions.SetTextFormattingMode(root,TextFormattingMode.Ideal);
         TextOptions.SetTextRenderingMode(root,TextRenderingMode.Grayscale);
         UseLayoutRounding=true;
@@ -69,9 +79,9 @@ internal sealed class QuotaPopup : Window
         B<TextBlock>("ServerAddress").Text=string.IsNullOrEmpty(QuotaApi.BaseUrl)?"尚未配置":QuotaApi.BaseUrl;
         B<TextBlock>("Heading").MouseLeftButtonDown+=delegate(object sender,MouseButtonEventArgs e){if(e.LeftButton==MouseButtonState.Pressed)DragMove();};
         SourceInitialized+=delegate {ApplyMaterial();};
-        SizeChanged+=delegate {if(IsVisible&&!Topmost)PositionPopup();};
+        SizeChanged+=delegate {if(IsVisible&&!Topmost&&!resizing)PositionPopup();};
         PreviewKeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Escape){if(editingKey)Settings(true);else Hide();e.Handled=true;}};
-        IsVisibleChanged+=delegate {if(!IsVisible){BeginAnimation(HeightProperty,null);if(!double.IsNaN(desiredHeight))Height=desiredHeight;ClearKeyDraft();}};
+        IsVisibleChanged+=delegate {if(!IsVisible){resizing=false;if(!double.IsNaN(desiredHeight))Height=desiredHeight;BeginAnimation(HeightProperty,null);ClearKeyDraft();}};
         Closing+=delegate(object sender,System.ComponentModel.CancelEventArgs e){if(!closing){e.Cancel=true;Hide();}};
         System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(this);
         Render();
@@ -89,11 +99,24 @@ internal sealed class QuotaPopup : Window
     private void ApplyMaterial()
     {
         var handle=new WindowInteropHelper(this).Handle;
-        HwndSource.FromHwnd(handle).CompositionTarget.BackgroundColor=Colors.Transparent;
+        var source=HwndSource.FromHwnd(handle);source.CompositionTarget.BackgroundColor=Colors.Transparent;source.AddHook(KeepResizeAnchor);
         int dark=light?0:1,corner=2,backdrop=3;
         DwmSetWindowAttribute(handle,20,ref dark,4);DwmSetWindowAttribute(handle,33,ref corner,4);
         var margins=new Margins {left=-1,right=-1,top=-1,bottom=-1};DwmExtendFrameIntoClientArea(handle,ref margins);
         if(DwmSetWindowAttribute(handle,38,ref backdrop,4)!=0)root.Background=Brush(light?"#F4F7FA":"#252B33");
+    }
+    private IntPtr KeepResizeAnchor(IntPtr window,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
+    {
+        // Apply height and bottom anchoring in the same native operation, before painting.
+        if(message==0x46&&resizing&&!Topmost){
+            var position=(WindowPosition)Marshal.PtrToStructure(lParam,typeof(WindowPosition));
+            WindowRect current;
+            if((position.flags&1)==0&&GetWindowRect(window,out current)){
+                position.x=current.left;position.y=resizeBottom-position.height;position.flags&=~2u;
+                Marshal.StructureToPtr(position,lParam,false);
+            }
+        }
+        return IntPtr.Zero;
     }
     internal void ShowPopup()
     {
@@ -112,12 +135,13 @@ internal sealed class QuotaPopup : Window
     {
         double target=Math.Min(MaxHeight,contentHeight);
         if(Math.Abs(target-desiredHeight)<0.5)return;
-        desiredHeight=target;double current=ActualHeight;Height=target;
+        desiredHeight=target;double current=ActualHeight;
         if(IsVisible&&current>0){
-            var animation=new DoubleAnimation(current,target,TimeSpan.FromMilliseconds(180)) {EasingFunction=new CubicEase {EasingMode=EasingMode.EaseOut},FillBehavior=FillBehavior.Stop};
-            animation.Completed+=delegate {BeginAnimation(HeightProperty,null);Height=desiredHeight;};
+            WindowRect bounds;GetWindowRect(new WindowInteropHelper(this).Handle,out bounds);resizeBottom=bounds.bottom;resizing=true;
+            var animation=new DoubleAnimation(current,target,TimeSpan.FromMilliseconds(240)) {EasingFunction=new SineEase {EasingMode=EasingMode.EaseInOut}};
+            animation.Completed+=delegate {Height=desiredHeight;BeginAnimation(HeightProperty,null);resizing=false;};
             BeginAnimation(HeightProperty,animation);
-        }else BeginAnimation(HeightProperty,null);
+        }else {Height=target;BeginAnimation(HeightProperty,null);}
     }
     internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Visibility=Visibility.Hidden;Render();}
     internal void SetPrimary(string alias){selected=alias;Render();}
