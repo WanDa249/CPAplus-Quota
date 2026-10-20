@@ -11,7 +11,7 @@
 
 ## 下载与安装
 
-首个通过双架构 CI 的测试包：[下载 Universal Beta](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39362148256/artifacts/12237708092)。[构建、测试与校验记录](VALIDATION.md)对应源码 `2e29093`，最低部署目标 macOS 13，已在 macOS 15.7.9 Runner 启动验证；macOS 13/14 实际运行仍待测试。
+当前账号池功能版：[下载 0.1.1-beta Universal Beta](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39411760648/artifacts/12259358288)。[构建、测试与校验记录](VALIDATION.md)对应源码 `0a7fa8a`，最低部署目标 macOS 13，已在 macOS 15.7.9 Runner 启动验证；macOS 13/14 实际运行仍待测试。
 
 1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
 2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.1-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。

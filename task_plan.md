@@ -14,7 +14,7 @@ Earlier billing blocker resolved by user. Successful run: https://github.com/Wan
 ## Account-pool parity update
 
 6. Read local Windows/server account-selection contract — complete. This feature is separate from public v0.1.1 display changes and from local main-account selection.
-7. Add explicit preferred-account and auto-reset actions, server-confirmed state and old-server compatibility — in progress.
-8. Verify HTTP/HTTPS behavior, state synchronization, no automatic PUT and error paths on both macOS runners; deliver new unsigned Universal Beta — pending.
+7. Add explicit preferred-account and auto-reset actions, server-confirmed state and old-server compatibility — complete.
+8. Verify HTTP/HTTPS behavior, state synchronization, no automatic PUT and error paths on both macOS runners; deliver new unsigned Universal Beta — complete; run 39411760648 is green, 15 XCTest cases per architecture. Recommended artifact 12259358288. Source 0a7fa8a.
 
 Boundary remains Mac source and synthetic tests only; do not modify production, Windows code or Releases.
