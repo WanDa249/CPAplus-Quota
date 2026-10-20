@@ -1,0 +1,78 @@
+name: macOS Native Beta
+on:
+  push:
+    branches: [macos/native-beta]
+    paths: ['macos/**', '.github/workflows/macos-beta.yml']
+  pull_request:
+    paths: ['macos/**', '.github/workflows/macos-beta.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-beta-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            expected: arm64
+          - runner: macos-15-intel
+            expected: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Environment evidence
+        run: |
+          mkdir -p macos/evidence
+          {
+            sw_vers
+            uname -m
+            xcodebuild -version
+            swift --version
+            git rev-parse HEAD
+          } | tee macos/evidence/environment.txt
+          test "$(uname -m)" = '${{ matrix.expected }}'
+      - name: Unit, real Keychain and loopback HTTPS tests
+        run: bash macos/scripts/test.sh 2>&1 | tee macos/evidence/tests.log
+      - name: Build Universal unsigned Beta
+        run: bash macos/scripts/build.sh 2>&1 | tee macos/evidence/build.log
+      - name: Native app launch smoke test
+        run: |
+          macos/dist/CPAplusQuota.app/Contents/MacOS/CPAplusQuota --smoke-test > macos/evidence/launch.log 2>&1 &
+          app_pid=$!
+          sleep 2
+          kill -0 "$app_pid"
+          wait "$app_pid"
+          echo 'Native launch and clean exit passed; desktop UX requires a physical Mac.' | tee -a macos/evidence/launch.log
+      - name: Record artifact metadata
+        run: |
+          cp macos/README.md macos/dist/INSTALL-AND-FEEDBACK.md
+          cp macos/evidence/environment.txt macos/dist/BUILD-ENVIRONMENT.txt
+          echo '### Unsigned macOS Beta (ad-hoc signature only)' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Universal arm64 + x86_64. macOS 13+. No Developer ID or notarization. Physical Mac acceptance pending.' >> "$GITHUB_STEP_SUMMARY"
+          cat macos/dist/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Beta
+        uses: actions/upload-artifact@v4
+        with:
+          name: CPAplusQuota-macOS-UNSIGNED-universal-built-on-${{ matrix.expected }}
+          path: |
+            macos/dist/*.zip
+            macos/dist/SHA256SUMS.txt
+            macos/dist/INSTALL-AND-FEEDBACK.md
+            macos/dist/BUILD-ENVIRONMENT.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-evidence-${{ matrix.expected }}
+          path: macos/evidence/
+          retention-days: 30

@@ -1,0 +1,5 @@
+.build*/
+dist/
+evidence/
+.swiftpm/
+.DS_Store

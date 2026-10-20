@@ -1,0 +1,53 @@
+# CPAplus 额度助手 macOS Beta
+
+原生 Swift / SwiftUI / AppKit 客户端，macOS 13 及以上。独立于 Windows 客户端，使用相同 CPAplus 用户额度接口。当前为 **未签名测试构建**（只有本地 ad-hoc 签名，无 Developer ID、无公证），未通过实体 Mac 交互验收，不是正式 Release。
+
+## 下载与安装
+
+1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
+2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.0-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。
+3. 将 `CPAplusQuota.app` 移入“应用程序”，双击启动。系统可能因缺少 Developer ID 与公证阻止启动。仅在明确核实来源、遵守设备或单位政策的受控测试中，按 macOS“隐私与安全性”提供的单次打开流程处理。不要关闭 Gatekeeper、移除隔离属性或关闭系统安全功能。系统拒绝或提示损坏时先停止并反馈。
+4. 首次输入 HTTPS 服务根地址与自己的 CPA API Key。普通网页地址不能代替兼容 API 地址。选择主账号；其他账号通过选择器查看。Key 保存到本机 Keychain。
+
+正式分发需要维护者的 Apple Developer Program 账号、Developer ID Application 证书、安全保存的签名凭据、Hardened Runtime、Apple 公证与 staple 流程。当前不具备这些条件；CI 通过不能解决普通用户的 Gatekeeper 信任问题。
+
+## 日常操作
+
+- 默认 Codex 桌面应用运行时显示菜单栏额度，退出后隐藏；设置中可改为始终显示。只验证官方 Bundle ID、OpenAI Team ID 和 Apple 签名，不使用名称/标题匹配，不请求辅助功能或屏幕录制权限。身份不匹配时可手动用始终显示模式。
+- 菜单栏只显示主账号，两项剩余百分比，不相加；点击打开原生详情，显示重置时间和真实额度更新时间。百分比与 Windows 一样取服务端 `remainingPercent` 并四舍五入。
+- 每15秒读取服务端缓存；Codex 关闭且未启用始终显示时暂停后台读取。手动刷新才调用可选 POST 接口。客户端至少冷却60秒，遵守 `Retry-After`，错误指数退避至300秒；供应商权限与更长冷却仍由服务器执行。
+- `额度更新于` 来自 `lastSuccessAt`，重复 GET 不会改变它。冻结、停用、状态未知、不支持、旧缓存和失败分别提示；无数据不显示0%。菜单栏 `!` 表示过期或查询错误。颜色不保证账号一定可调用。
+- 菜单栏空间不足或刘海遮挡时，macOS 可能隐藏此项；尝试按住 Command 调整位置、减少菜单栏项目，或从 Finder 再次打开 App 进入设置。客户端不覆盖系统菜单栏或抢占其他应用位置。
+- 关闭设置只收起窗口；退出需点“退出程序”。菜单栏已隐藏时，从 Finder 再次启动同一个 App 可重新打开设置。开启登录启动后，在系统登录项中确认批准；先将 App 放到固定应用程序目录。
+- 更换服务必须重新输入密钥，绝不会将旧 Key 自动发送给新服务。账号选择和备注按服务隔离。当前服务密钥可在设置中删除；卸载前关闭登录启动，再退出并删除 App。切换过的旧服务凭据可在“钥匙串访问”中搜索 `io.github.WanDa249.CPAplusQuota` 单独删除。
+
+## 隐私
+
+仅访问用户配置的 HTTPS origin 下 `/v1/me/quotas` 和可选 `/v1/me/quotas/refresh`，使用 Authorization Bearer；刷新带 `X-Quota-Account`。不请求供应商、不读取 Codex OAuth 文件、不遥测、不推送。拒绝重定向，不忽略生产证书错误；使用系统网络设置。密钥不写配置、URL、日志或额度缓存，Keychain 禁止同步到 iCloud。设置、服务地址、主账号别名和本地备注存于本机 UserDefaults；额度只在内存中。
+
+## 开发与验证
+
+在 Mac 安装 Xcode Command Line Tools，然后从仓库根目录运行：
+
+```bash
+bash macos/scripts/test.sh
+bash macos/scripts/build.sh
+```
+
+Swift Package 无第三方运行时依赖。`test.sh` 生成临时自签证书，仅测试 delegate 信任该证书，以 loopback HTTPS 和虚构 Key 测试真实 URLSession 请求。生产 URLSession 对同一证书必须拒绝。另测解析、状态、401/403、429、刷新回退、缓存时间、Keychain 读写替换删除与服务隔离、身份拒绝。测试不会连接生产服务或供应商。
+
+CI 在 Apple Silicon 与 Intel Runner 分别运行测试、交叉编译两架构并合成 Universal App；保留环境、测试、构建、启动日志和 SHA-256。启动烟雾检查仅证明进程可启动和退出，不证明 GUI 功能正确。
+
+## 实体 Mac 验收与反馈
+
+以下全部仍需真实 Mac 用户验证，**CI 成功不表示已验收**：
+
+- 下载后的 Gatekeeper 提示、解压和应用程序目录安装；Apple Silicon 优先，Intel 如有用户再测。
+- 初次设置、有效/无效 CPA Key、Keychain 授权提示、重启后的密钥持久化、替换和删除。
+- 菜单栏文本、弹层位置、亮暗模式、刘海、不同缩放和多屏、菜单栏拥挤时的恢复入口。
+- 官方 Codex 启动、退出、重复启动、系统休眠唤醒时显示与隐藏；常驻模式切换；是否干扰焦点。
+- 多账号选择、备注和服务切换隔离；真实服务字段、额度含义、重置时区和真实更新时间。
+- 网络中断/恢复、缓存过期、服务器限流、无主动刷新支持时的提示和退避。
+- 登录项注册、系统批准、登录后启动、移动 App 后行为、退出与卸载。
+
+反馈请提供 macOS 版本、芯片、显示器/缩放、构建 run 链接、操作步骤、预期与实际结果。不要发送真实 Key、OAuth token、真实服务地址、未脱敏账号截图或个人路径。反馈入口为本仓库 Issues。验收通过后才考虑在现有 Releases 发布 Mac 版本。
