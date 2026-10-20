@@ -169,7 +169,10 @@ final class QuotaStore: ObservableObject {
                 self.serverAt = parseDate(data.serverTime) ?? self.receivedAt
                 self.message = refresh ? data.refreshFeedback : ""
                 if changeSelection {
-                    self.message = data.selection?.mode == "manual" ? "已优先使用所选账号。" : "已恢复按优先级自动排序。"
+                    let confirmed = preferredAlias == nil ? data.selection?.mode == "auto" :
+                        data.selection?.mode == "manual" && data.selection?.alias == preferredAlias
+                    self.message = confirmed ? (preferredAlias == nil ? "已恢复按优先级自动排序。" : "已优先使用所选账号。") :
+                        "服务器未确认所选账号；已同步当前调用状态。"
                 }
                 self.gate.success()
                 if data.refreshStatus == "deferred" || data.refreshStatus == "error" {

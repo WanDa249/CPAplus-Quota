@@ -152,6 +152,23 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(writes, 3)
     }
     @MainActor
+    func testAppReportsActualStateWhenAnotherSelectionWins() async throws {
+        let suite = "CPAplusQuota.selection-race.tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        MockProtocol.handler = { request in
+            (200, [:], request.httpMethod == "PUT" ? selectionFixture(mode: "manual", alias: "账号 abc123") : selectionFixture())
+        }
+        let store = QuotaStore(api: try mockAPI(), key: "cpa-fake-key-only", origin: "https://quota.invalid", defaults: defaults)
+        store.read(force: true)
+        await idle(store)
+        store.preferAccount("账号 def456")
+        await idle(store)
+        XCTAssertEqual(store.account?.alias, "账号 abc123")
+        XCTAssertTrue(store.message.contains("未确认所选账号"))
+        XCTAssertFalse(store.connectionFailed, "The reported server state is valid even when the requested preference lost a race")
+    }
+    @MainActor
     func testOldServersKeepLocalDisplayAndHideRoutingActions() async throws {
         let suite = "CPAplusQuota.old-server.tests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
