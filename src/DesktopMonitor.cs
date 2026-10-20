@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
+using Microsoft.Win32;
 
 internal sealed class DesktopMonitor : IDisposable
 {
@@ -34,7 +35,32 @@ internal sealed class DesktopMonitor : IDisposable
     private long reconcileCount,windowEvents,reorderEvents,probeCount;
     private DateTime recordedAt;
     private List<DesktopFacts.CodexWindow> codexGui;
-    internal VisibilityMode Mode=VisibilityMode.CodexRunning;
+    private VisibilityMode mode=LoadMode();
+    internal VisibilityMode Mode
+    {
+        get{return mode;}
+        set {
+            if(!Enum.IsDefined(typeof(VisibilityMode),value))throw new ArgumentOutOfRangeException("value");
+            if(mode==value)return;
+            using(var key=Registry.CurrentUser.CreateSubKey(@"Software\CPAplusQuota"))key.SetValue("DisplayMode",(int)value,RegistryValueKind.DWord);
+            mode=value;
+        }
+    }
+    private static VisibilityMode LoadMode()
+    {
+        using(var key=Registry.CurrentUser.OpenSubKey(@"Software\CPAplusQuota")){
+            int value;return key!=null&&int.TryParse(Convert.ToString(key.GetValue("DisplayMode")),out value)&&Enum.IsDefined(typeof(VisibilityMode),value)?(VisibilityMode)value:VisibilityMode.CodexRunning;
+        }
+    }
+    internal static string VisibilityReason(VisibilityMode mode,IList<DesktopFacts.CodexWindow> windows,bool foreground)
+    {
+        if(mode==VisibilityMode.Hidden)return "user-hidden";
+        if(mode==VisibilityMode.Always)return null;
+        if(windows.Count==0)return "codex-closed";
+        if(mode==VisibilityMode.CodexForeground&&!foreground)return "codex-not-foreground";
+        if(mode==VisibilityMode.CodexNotMinimized&&windows.All(window=>window.minimized))return "codex-minimized";
+        return null;
+    }
     internal bool CodexRunning {get;private set;}
     internal event Action<bool> CodexRunningChanged;
     internal static string EvidenceDirectory;
@@ -92,8 +118,9 @@ internal sealed class DesktopMonitor : IDisposable
         bool running=codex.Count>0;
         timer.Interval=running||Mode==VisibilityMode.Always?1000:5000;
         if(CodexRunning!=running){CodexRunning=running;if(CodexRunningChanged!=null)CodexRunningChanged(running);}
-        if(!running&&Mode!=VisibilityMode.Always){
-            layerTimer.Stop();strip.Hide();Record("codex-closed",0,false,Rectangle.Empty,Rectangle.Empty,0);return;
+        string visibilityReason=VisibilityReason(Mode,codex,codexForeground);
+        if(visibilityReason!=null){
+            layerTimer.Stop();strip.Hide();Record(visibilityReason,codex.Count,codexForeground,Rectangle.Empty,Rectangle.Empty,0);return;
         }
         IntPtr current=DesktopFacts.FindWindow("Shell_TrayWnd",null);
         DesktopFacts.Rect barRect,trayRect;
@@ -107,7 +134,7 @@ internal sealed class DesktopMonitor : IDisposable
             locationHook=explorer==0?IntPtr.Zero:DesktopFacts.SetWinEventHook(0x800B,0x800B,IntPtr.Zero,callback,explorer,0,2);
             reorderHook=explorer==0?IntPtr.Zero:DesktopFacts.SetWinEventHook(0x8004,0x8004,IntPtr.Zero,callback,explorer,0,2);
         }
-        string reason=!ready||tray==IntPtr.Zero?"taskbar-unavailable":barRect.Rectangle.Height>barRect.Rectangle.Width?"vertical-taskbar-unsupported":!Screen.FromRectangle(barRect.Rectangle).Bounds.Contains(barRect.Rectangle)?"taskbar-hidden":Fullscreen(barRect.Rectangle)?"fullscreen":Mode==VisibilityMode.CodexRunning&&codex.Count==0?"codex-closed":Mode==VisibilityMode.CodexForeground&&!codexForeground?"codex-not-foreground":null;
+        string reason=!ready||tray==IntPtr.Zero?"taskbar-unavailable":barRect.Rectangle.Height>barRect.Rectangle.Width?"vertical-taskbar-unsupported":!Screen.FromRectangle(barRect.Rectangle).Bounds.Contains(barRect.Rectangle)?"taskbar-hidden":Fullscreen(barRect.Rectangle)?"fullscreen":null;
         if(reason!=null){strip.Hide();Record(reason,codex.Count,codexForeground,barRect.Rectangle,trayRect.Rectangle,0);return;}
         if(measuredBar!=barRect.Rectangle||measuredTray!=trayRect.Rectangle){if(buttons!=null)InvalidateGeometry(true);}
         if(!measuring&&(geometryDirty||buttons==null||(DateTime.UtcNow-measuredAt).TotalSeconds>=5)){Measure(current,barRect.Rectangle,trayRect.Rectangle);}

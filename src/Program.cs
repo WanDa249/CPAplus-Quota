@@ -86,13 +86,21 @@ internal sealed class TrayContext : ApplicationContext
         form.ExitRequested += delegate { ExitThread(); };
         strip.DetailsRequested += delegate { form.ShowPopup(); };
         var modes = new ToolStripMenuItem("显示时机");
-        var labels = new[] { "Codex 图形应用运行时", "仅 Codex 在前台", "始终显示" };
+        var labels = new[] { "Codex 图形应用运行时", "仅 Codex 在前台", "始终显示", "Codex 未最小化时显示", "隐藏任务栏额度" };
+        Action<int> selectMode=delegate(int value){
+            if(value<0||value>=labels.Length)return;
+            try {desktop.Mode=(VisibilityMode)value;}
+            catch(UnauthorizedAccessException){form.SetStatus("显示方式未能保存。",true);return;}
+            catch(System.Security.SecurityException){form.SetStatus("Windows 不允许保存显示方式。",true);return;}
+            form.SetDisplayMode(value);for(int i=0;i<modes.DropDownItems.Count;i++)((ToolStripMenuItem)modes.DropDownItems[i]).Checked=i==value;
+            UpdateActivity();desktop.Reconcile();
+        };
         for (int i=0;i<labels.Length;i++) {
-            int choice=i; var item=new ToolStripMenuItem(labels[i]) { Checked=i==0 };
-            item.Click += delegate { desktop.Mode=(VisibilityMode)choice;form.SetDisplayMode(choice);foreach(ToolStripMenuItem option in modes.DropDownItems)option.Checked=option==item;UpdateActivity();desktop.Reconcile(); };
+            int choice=i; var item=new ToolStripMenuItem(labels[i]) { Checked=i==(int)desktop.Mode };
+            item.Click += delegate {selectMode(choice);};
             modes.DropDownItems.Add(item);
         }
-        form.ModeRequested += delegate(int value) {if(value<0||value>2)return;desktop.Mode=(VisibilityMode)value;for(int i=0;i<3;i++)((ToolStripMenuItem)modes.DropDownItems[i]).Checked=i==value;UpdateActivity();desktop.Reconcile();};
+        form.ModeRequested += selectMode;
         var startupMenu=new ToolStripMenuItem("随 Windows 静默启动");
         startupMenu.Click+=delegate {SetStartup(!StartupRegistration.Enabled);};
         menu.Opening+=delegate {startupMenu.Checked=StartupRegistration.Enabled;};

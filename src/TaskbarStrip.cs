@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-internal enum VisibilityMode { CodexRunning, CodexForeground, Always }
+internal enum VisibilityMode { CodexRunning, CodexForeground, Always, CodexNotMinimized, Hidden }
 
 internal sealed class TaskbarStrip : Form
 {

@@ -58,7 +58,7 @@ internal sealed class QuotaPopup : Window
         B<PasswordBox>("KeyInput").KeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Enter){SaveKey();e.Handled=true;}};
         B<CheckBox>("PinSetting").Click+=delegate {if(PinRequested!=null)PinRequested(this,EventArgs.Empty);};
         B<CheckBox>("StartupSetting").Click+=delegate {if(StartupRequested!=null)StartupRequested(B<CheckBox>("StartupSetting").IsChecked==true);};
-        B<ComboBox>("DisplayMode").ItemsSource=new[]{"Codex 运行时显示","仅 Codex 在前台时显示","始终显示"};
+        B<ComboBox>("DisplayMode").ItemsSource=new[]{"Codex 运行时显示","仅 Codex 在前台时显示","始终显示","Codex 未最小化时显示","隐藏任务栏额度"};
         B<ComboBox>("DisplayMode").SelectedIndex=0;
         B<ComboBox>("DisplayMode").SelectionChanged+=delegate {if(ModeRequested!=null)ModeRequested(B<ComboBox>("DisplayMode").SelectedIndex);};
         B<TextBlock>("ServerAddress").Text=string.IsNullOrEmpty(QuotaApi.BaseUrl)?"尚未配置":QuotaApi.BaseUrl;
@@ -109,7 +109,7 @@ internal sealed class QuotaPopup : Window
     internal void SetPinned(bool value){Topmost=value;B<CheckBox>("PinSetting").IsChecked=value;}
     internal void SetStartup(bool value){B<CheckBox>("StartupSetting").IsChecked=value;}
     internal void SetPaused(bool value){paused=value;Render();}
-    internal void SetMode(int value){if(value>=0&&value<3)B<ComboBox>("DisplayMode").SelectedIndex=value;}
+    internal void SetMode(int value){if(value>=0&&value<5)B<ComboBox>("DisplayMode").SelectedIndex=value;}
     internal void SetKeyLabel(string value){B<TextBlock>("KeyLabel").Text=string.IsNullOrEmpty(value)?"尚未配置密钥":"密钥已配置 · ··"+value.Substring(Math.Max(0,value.Length-2));B<TextBlock>("ServerAddress").Text=string.IsNullOrEmpty(QuotaApi.BaseUrl)?"尚未配置":QuotaApi.BaseUrl;}
     internal string ServerDraft {get{return B<TextBox>("ServerInput").Text;}}
     internal void ShowKeyEditor(string current)
