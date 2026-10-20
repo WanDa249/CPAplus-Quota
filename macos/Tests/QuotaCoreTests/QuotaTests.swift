@@ -153,6 +153,32 @@ final class FixtureTrust: NSObject, URLSessionTaskDelegate {
 }
 
 final class HTTPSIntegrationTests: XCTestCase {
+    func testAccountSelectionOverRealTLSAndCrossDeviceReadback() async throws {
+        guard let origin = ProcessInfo.processInfo.environment["QUOTA_TEST_ORIGIN"],
+              let certPath = ProcessInfo.processInfo.environment["QUOTA_TEST_CERT"] else { throw XCTSkip("Run scripts/test.sh for HTTPS") }
+        let cert = try XCTUnwrap(SecCertificateCreateWithData(nil, Data(contentsOf: URL(fileURLWithPath: certPath)) as CFData))
+        func client() throws -> QuotaAPI {
+            let delegate = FixtureTrust(certificate: cert)
+            return try QuotaAPI(origin: origin, session: URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil))
+        }
+        let first = try client(), second = try client()
+        let key = "cpa-fake-selection"
+        let before = try await first.read(key: key)
+        XCTAssertEqual(before.selection?.mode, "auto")
+        let selected = try await first.selectAccount(key: key, alias: "账号 def456")
+        XCTAssertEqual(selected.selection?.alias, "账号 def456")
+        let observed = try await second.read(key: key)
+        XCTAssertEqual(observed.selection, selected.selection)
+        XCTAssertEqual(observed.accounts[0].lastSuccessAt, before.accounts[0].lastSuccessAt)
+        do { _ = try await first.selectAccount(key: key, alias: "outside-pool"); XCTFail("Unauthorized alias") }
+        catch { XCTAssertEqual(error as? APIError, .http(404, 0)) }
+        let stillSelected = try await second.read(key: key)
+        XCTAssertEqual(stillSelected.selection?.alias, "账号 def456")
+        _ = try await second.selectAccount(key: key, alias: nil)
+        let reset = try await first.read(key: key)
+        XCTAssertEqual(reset.selection?.mode, "auto")
+        XCTAssertEqual(reset.accounts[0].lastSuccessAt, before.accounts[0].lastSuccessAt)
+    }
     func testRealTLSCacheRefreshAuthAndRedirect() async throws {
         guard let origin = ProcessInfo.processInfo.environment["QUOTA_TEST_ORIGIN"],
               let certPath = ProcessInfo.processInfo.environment["QUOTA_TEST_CERT"] else {

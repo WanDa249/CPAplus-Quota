@@ -13,6 +13,14 @@ BASE = {
     "serverTime": "2026-10-20T00:00:10Z", "staleAfterSeconds": 300}
 
 
+def selected_result(alias=None):
+    result = json.loads(json.dumps(BASE))
+    second = dict(result["accounts"][0], alias="账号 def456", displayName="模拟账号二")
+    result["accounts"].append(second)
+    result["selection"] = {"mode": "auto"} if alias is None else {"mode": "manual", "alias": "账号 " + alias}
+    return result
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # Never record Authorization or request contents.
@@ -40,6 +48,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(429, {}, {"Retry-After": "120"})
         if key == "Bearer cpa-fake-forbidden":
             return self.send_json(403, {})
+        if key == "Bearer cpa-fake-selection":
+            return self.send_json(200, selected_result(getattr(self.server, "selected_alias", None)))
         if key != "Bearer cpa-fake-key-only":
             return self.send_json(401, {})
         self.send_json(200, BASE)
@@ -55,6 +65,19 @@ class Handler(BaseHTTPRequestHandler):
         result["accounts"][0]["lastSuccessAt"] = "2026-10-20T00:00:30Z"
         result["refreshStatus"] = "success"
         self.send_json(200, result)
+
+    def do_PUT(self):
+        if self.path != "/v1/me/account-selection":
+            return self.send_json(404, {})
+        if self.headers.get("Authorization") != "Bearer cpa-fake-selection":
+            return self.send_json(401, {})
+        if self.headers.get("Content-Length", "0") != "0":
+            return self.send_json(400, {})
+        alias = self.headers.get("X-Quota-Account") or None
+        if alias not in (None, "abc123", "def456"):
+            return self.send_json(404, {})
+        self.server.selected_alias = alias
+        self.send_json(200, selected_result(alias))
 
 
 if __name__ == "__main__":

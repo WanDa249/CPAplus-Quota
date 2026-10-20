@@ -2,12 +2,19 @@
 
 原生 Swift / SwiftUI / AppKit 客户端，macOS 13 及以上。独立于 Windows 客户端，使用相同 CPAplus 用户额度接口。当前为 **未签名测试构建**（只有本地 ad-hoc 签名，无 Developer ID、无公证），未通过实体 Mac 交互验收，不是正式 Release。
 
+## 0.1.1-beta 账号池功能更新
+
+- 新增“优先使用此账号”和“恢复自动排序”，与只切换主显示账号分开。服务返回选择能力时才显示调用操作，旧服务端继续仅查看额度。
+- 同一 CPA Key 的设备共享服务端优先选择；以返回的 `selection` 为准，收到成功响应后才更新界面。启动、定时 GET、查看其他账号或恢复本地设置都不会写入调用选择。
+- 手动偏好优先于账号 priority，但不保证每次请求都使用该账号。临时故障按服务端规则在授权池内回退；耗尽、冻结、停用、解绑或服务重启可恢复自动，客户端不会偷偷重新选择。
+- 选择请求不查询供应商、不刷新额度、不修改账号绑定或全局 priority。失败或超时提示“切换未确认”，之后只读状态，不自动重试 PUT。
+
 ## 下载与安装
 
 首个通过双架构 CI 的测试包：[下载 Universal Beta](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39362148256/artifacts/12237708092)。[构建、测试与校验记录](VALIDATION.md)对应源码 `2e29093`，最低部署目标 macOS 13，已在 macOS 15.7.9 Runner 启动验证；macOS 13/14 实际运行仍待测试。
 
 1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
-2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.0-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。
+2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.1-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。
 3. 将 `CPAplusQuota.app` 移入“应用程序”，双击启动。系统可能因缺少 Developer ID 与公证阻止启动。仅在明确核实来源、遵守设备或单位政策的受控测试中，按 macOS“隐私与安全性”提供的单次打开流程处理。不要关闭 Gatekeeper、移除隔离属性或关闭系统安全功能。系统拒绝或提示损坏时先停止并反馈。
 4. 首次输入 HTTPS 服务根地址与自己的 CPA API Key。普通网页地址不能代替兼容 API 地址。选择主账号；其他账号通过选择器查看。Key 保存到本机 Keychain。
 
@@ -27,7 +34,7 @@
 
 ## 隐私
 
-仅访问用户配置的 HTTPS origin 下 `/v1/me/quotas` 和可选 `/v1/me/quotas/refresh`，使用 Authorization Bearer；刷新带 `X-Quota-Account`。不请求供应商、不读取 Codex OAuth 文件、不遥测、不推送。拒绝重定向，不忽略生产证书错误；使用系统网络设置。密钥不写配置、URL、日志或额度缓存，Keychain 禁止同步到 iCloud。设置、服务地址、主账号别名和本地备注存于本机 UserDefaults；额度只在内存中。
+仅访问用户配置的 HTTPS origin 下 `/v1/me/quotas`、可选 `/v1/me/quotas/refresh` 和可选 `PUT /v1/me/account-selection`，使用 Authorization Bearer；刷新及调用选择带 `X-Quota-Account`，恢复自动时不带账号头。调用偏好只在明确点击按钮时写入，启动和定时读取不写入。不请求供应商、不读取 Codex OAuth 文件、不遥测、不推送。拒绝重定向，不忽略生产证书错误；使用系统网络设置。密钥不写配置、URL、日志或额度缓存，Keychain 禁止同步到 iCloud。设置、服务地址、主账号别名和本地备注存于本机 UserDefaults；额度和服务端调用状态只在内存中，不持久化调用偏好。
 
 ## 开发与验证
 
@@ -51,6 +58,7 @@ CI 在 Apple Silicon 与 Intel Runner 分别运行测试、交叉编译两架构
 - 菜单栏文本、弹层位置、亮暗模式、刘海、不同缩放和多屏、菜单栏拥挤时的恢复入口。
 - 官方 Codex 启动、退出、重复启动、系统休眠唤醒时显示与隐藏；常驻模式切换；是否干扰焦点。
 - 多账号选择、备注和服务切换隔离；真实服务字段、额度含义、重置时区和真实更新时间。
+- “仅查看”不会改变调用账号；“优先使用”与“恢复自动排序”在同一 Key 的 Windows/Mac 之间同步；账号失效或服务重启后不自动重选；旧服务端隐藏调用按钮。
 - 网络中断/恢复、缓存过期、服务器限流、无主动刷新支持时的提示和退避。
 - 登录项注册、系统批准、登录后启动、移动 App 后行为、退出与卸载。
 

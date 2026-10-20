@@ -55,11 +55,18 @@ public struct QuotaAccount: Decodable, Identifiable {
     }
 }
 
+public struct AccountSelection: Decodable, Equatable {
+    public let mode: String
+    public let alias: String?
+}
+
 public struct QuotaResult: Decodable {
     public let accounts: [QuotaAccount]
     public let serverTime: String?
     public let staleAfterSeconds: Int?
     public var refreshStatus: String?
+    public let selection: AccountSelection?
+    public var selectionSupported: Bool { selection?.mode == "auto" || selection?.mode == "manual" }
 
     public static func decode(_ data: Data) throws -> QuotaResult {
         let result: Self
@@ -67,6 +74,8 @@ public struct QuotaResult: Decodable {
         catch { throw APIError.invalidResponse }
         guard result.accounts.allSatisfy({ !$0.alias.isEmpty && !$0.alias.contains(where: { $0.isNewline }) }),
               Set(result.accounts.map(\.alias)).count == result.accounts.count else { throw APIError.invalidResponse }
+        if let selection = result.selection, selection.mode == "manual",
+           !result.accounts.contains(where: { $0.alias == selection.alias }) { throw APIError.invalidResponse }
         return result
     }
     public var refreshFeedback: String {

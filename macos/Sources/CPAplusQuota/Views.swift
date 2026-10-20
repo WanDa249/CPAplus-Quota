@@ -22,9 +22,20 @@ struct QuotaDetail: View {
             if let account = store.account {
                 Text(store.label(account)).font(.headline).lineLimit(2).textSelection(.enabled)
                 if (store.result?.accounts.count ?? 0) > 1 {
-                    Picker("主账号", selection: Binding(get: { store.account?.alias ?? "" }, set: store.select)) {
+                    Picker("查看账号", selection: Binding(get: { store.account?.alias ?? "" }, set: store.select)) {
                         ForEach(store.result?.accounts ?? []) { Text(store.label($0)).tag($0.alias) }
                     }.controlSize(.small)
+                }
+                if store.result?.selectionSupported == true {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(store.selectionText).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        HStack {
+                            Button("优先使用此账号") { store.preferAccount(account.alias) }.disabled(!store.canPreferAccount)
+                                .help("更改当前 API Key 的优先调用账号；同一 Key 的其他设备也会看到此选择。临时失败仍可在授权池内回退。")
+                            Button("恢复自动排序") { store.preferAccount(nil) }
+                                .disabled(!store.canChangeSelection || store.result?.selection?.mode != "manual")
+                        }.controlSize(.small)
+                    }
                 }
                 quotaRow("五小时剩余", window: account.fiveHour, account: account)
                 quotaRow("周剩余", window: account.weekly, account: account)
@@ -73,7 +84,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("CPAplus 额度助手").font(.title2.bold())
-            Text("macOS 0.1.0-beta · 未签名测试构建").font(.caption).foregroundStyle(.secondary)
+            Text("macOS 0.1.1-beta · 未签名测试构建").font(.caption).foregroundStyle(.secondary)
             Form {
                 TextField("HTTPS 服务根地址", text: $server).textFieldStyle(.roundedBorder)
                 SecureField("CPA API Key", text: $key).textFieldStyle(.roundedBorder)
@@ -107,6 +118,8 @@ struct SettingsView: View {
                     Picker("主显示账号", selection: Binding(get: { account.alias }, set: store.select)) {
                         ForEach(store.result?.accounts ?? []) { Text(store.label($0)).tag($0.alias) }
                     }
+                    Text("此选择仅切换显示。优先调用及恢复自动排序请在菜单栏详情中操作。")
+                        .font(.caption).foregroundStyle(.secondary)
                     TextField("当前账号本地备注（最多40字）", text: $note).textFieldStyle(.roundedBorder)
                     Button("保存备注") { store.saveNote(note); feedback = "备注已保存。" }
                 }

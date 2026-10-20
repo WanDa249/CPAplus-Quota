@@ -8,6 +8,6 @@ let package = Package(
     targets: [
         .target(name: "QuotaCore"),
         .executableTarget(name: "CPAplusQuota", dependencies: ["QuotaCore"]),
-        .testTarget(name: "QuotaCoreTests", dependencies: ["QuotaCore"])
+        .testTarget(name: "QuotaCoreTests", dependencies: ["QuotaCore", "CPAplusQuota"])
     ]
 )

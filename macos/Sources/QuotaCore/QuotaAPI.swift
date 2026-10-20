@@ -27,12 +27,19 @@ public final class QuotaAPI {
         guard !alias.isEmpty, !alias.contains(where: { $0.isNewline || $0.asciiValue == 0 }) else { throw APIError.invalidResponse }
         return try await send(key: key, alias: alias)
     }
-    private func send(key: String, alias: String?) async throws -> QuotaResult {
+    public func selectAccount(key: String, alias: String?) async throws -> QuotaResult {
+        if let alias, alias.isEmpty || alias.contains(where: { $0.isNewline || $0.asciiValue == 0 }) { throw APIError.invalidResponse }
+        let result = try await send(key: key, alias: alias, selection: true)
+        guard result.selectionSupported else { throw APIError.invalidResponse }
+        return result
+    }
+    private func send(key: String, alias: String?, selection: Bool = false) async throws -> QuotaResult {
         guard Endpoint.validKey(key) else { throw APIError.invalidKey }
-        guard let url = URL(string: origin + "/v1/me/quotas" + (alias == nil ? "" : "/refresh")) else { throw APIError.invalidEndpoint }
+        let path = selection ? "/v1/me/account-selection" : "/v1/me/quotas" + (alias == nil ? "" : "/refresh")
+        guard let url = URL(string: origin + path) else { throw APIError.invalidEndpoint }
         var request = URLRequest(url: url)
-        request.httpMethod = alias == nil ? "GET" : "POST"
-        request.timeoutInterval = alias == nil ? 8 : 125
+        request.httpMethod = selection ? "PUT" : alias == nil ? "GET" : "POST"
+        request.timeoutInterval = selection || alias == nil ? 8 : 125
         request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
         request.setValue("no-cache, no-store", forHTTPHeaderField: "Cache-Control")
         if let alias { request.setValue(alias.replacingOccurrences(of: "账号 ", with: ""), forHTTPHeaderField: "X-Quota-Account") }
@@ -42,7 +49,7 @@ public final class QuotaAPI {
         if code == 401 { throw APIError.unauthorized }
         if code == 403 { throw APIError.forbidden }
         if (300..<400).contains(code) { throw APIError.redirect }
-        if alias != nil && (code == 404 || code == 405) {
+        if !selection && alias != nil && (code == 404 || code == 405) {
             var cached = try await read(key: key)
             cached.refreshStatus = "not_supported"
             return cached

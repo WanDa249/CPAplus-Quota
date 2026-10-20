@@ -10,3 +10,11 @@ Success: green GitHub macOS run with downloadable app; Windows tree and publishe
 Boundary: no production server, provider tokens, or official release publication.
 
 Earlier billing blocker resolved by user. Successful run: https://github.com/WanDa249/CPAplus-Quota/actions/runs/39362148256 . Downloaded Universal archive and verified SHA-256, both CPU slices, bundle structure and permissions. Source commit 2e290938ea6190607c276c187aadf969c7aa34ca. Physical Mac acceptance and Developer ID/notarization are outside this CI-complete Beta milestone and remain prerequisites for formal distribution.
+
+## Account-pool parity update
+
+6. Read local Windows/server account-selection contract — complete. This feature is separate from public v0.1.1 display changes and from local main-account selection.
+7. Add explicit preferred-account and auto-reset actions, server-confirmed state and old-server compatibility — in progress.
+8. Verify HTTP/HTTPS behavior, state synchronization, no automatic PUT and error paths on both macOS runners; deliver new unsigned Universal Beta — pending.
+
+Boundary remains Mac source and synthetic tests only; do not modify production, Windows code or Releases.
