@@ -22,11 +22,18 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$temp_dir/cert.cnf" \
 openssl x509 -in "$temp_dir/cert.pem" -outform DER -out "$temp_dir/cert.der"
 python3 scripts/mock_https.py --cert "$temp_dir/cert.pem" --key "$temp_dir/key.pem" --port-file "$temp_dir/port" &
 server_pid=$!
-for _ in {1..50}; do
+for _ in {1..300}; do
   [[ -s "$temp_dir/port" ]] && break
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    echo 'Loopback HTTPS fixture exited before becoming ready.' >&2
+    exit 1
+  fi
   sleep 0.1
 done
-test -s "$temp_dir/port"
+if [[ ! -s "$temp_dir/port" ]]; then
+  echo 'Loopback HTTPS fixture did not become ready within 30 seconds.' >&2
+  exit 1
+fi
 export QUOTA_TEST_ORIGIN="https://localhost:$(cat "$temp_dir/port")"
 export QUOTA_TEST_CERT="$temp_dir/cert.der"
 swift test --no-parallel
