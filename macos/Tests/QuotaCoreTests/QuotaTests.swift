@@ -75,6 +75,11 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(gate.readAfter.timeIntervalSince(now), 300)
         XCTAssertEqual(QuotaAPI.retryDelay("120", now: now), 120)
         XCTAssertEqual(QuotaAPI.retryDelay("Thu, 01 Jan 1970 00:20:00 GMT", now: now), 200)
+        gate.success()
+        for delay in [15.0, 30, 60, 120, 240, 300, 300] {
+            gate.failure(APIError.invalidResponse, now: now)
+            XCTAssertEqual(gate.readAfter.timeIntervalSince(now), delay)
+        }
     }
     func testCacheReadsAndManualRefreshHeaders() async throws {
         let configuration = URLSessionConfiguration.ephemeral
@@ -128,9 +133,14 @@ final class QuotaTests: XCTestCase {
 }
 
 // Trust only this run's generated test root, only inside this test delegate.
-final class FixtureTrust: NoRedirectDelegate, URLSessionDelegate {
+final class FixtureTrust: NSObject, URLSessionTaskDelegate {
     let certificate: SecCertificate
     init(certificate: SecCertificate) { self.certificate = certificate }
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,

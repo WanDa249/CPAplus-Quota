@@ -41,7 +41,10 @@ public struct QuotaAccount: Decodable, Identifiable {
     }
     public func expired(at serverNow: Date, staleAfter: Int?) -> Bool {
         if stale == true { return true }
-        guard let limit = staleAfter, limit > 0, let success = parseDate(lastSuccessAt) else { return false }
+        if [fiveHour?.resetAt, weekly?.resetAt].compactMap({ parseDate($0) }).contains(where: { $0 <= serverNow }) { return true }
+        guard let success = parseDate(lastSuccessAt) else { return false }
+        if success.timeIntervalSince(serverNow) > 60 { return true }
+        guard let limit = staleAfter, limit > 0 else { return false }
         return serverNow.timeIntervalSince(success) > Double(limit)
     }
     public func menuTitle(expired: Bool) -> String {
@@ -59,7 +62,9 @@ public struct QuotaResult: Decodable {
     public var refreshStatus: String?
 
     public static func decode(_ data: Data) throws -> QuotaResult {
-        let result = try JSONDecoder().decode(Self.self, from: data)
+        let result: Self
+        do { result = try JSONDecoder().decode(Self.self, from: data) }
+        catch { throw APIError.invalidResponse }
         guard result.accounts.allSatisfy({ !$0.alias.isEmpty && !$0.alias.contains(where: { $0.isNewline }) }),
               Set(result.accounts.map(\.alias)).count == result.accounts.count else { throw APIError.invalidResponse }
         return result
@@ -129,7 +134,7 @@ public struct RequestGate {
     public mutating func beginRefresh(now: Date) { refreshAfter = now.addingTimeInterval(60) }
     public mutating func success() { failures = 0; readAfter = .distantPast }
     public mutating func failure(_ error: Error, now: Date) {
-        failures = min(failures + 1, 5)
+        failures = min(failures + 1, 6)
         var delay = min(300, 15 * pow(2, Double(failures - 1)))
         if case APIError.http(_, let retry) = error { delay = max(delay, retry) }
         if let api = error as? APIError, api == .unauthorized || api == .forbidden { delay = 300 }

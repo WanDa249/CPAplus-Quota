@@ -8,6 +8,7 @@ final class QuotaStore: ObservableObject {
     @Published var result: QuotaResult?
     @Published var message = ""
     @Published var busy = false
+    @Published var connectionFailed = false
     @Published var codexRunning = false
     @Published var origin = UserDefaults.standard.string(forKey: "server") ?? ""
     @Published var alwaysShow = UserDefaults.standard.bool(forKey: "alwaysShow") {
@@ -30,7 +31,10 @@ final class QuotaStore: ObservableObject {
     var canRefresh: Bool { configured && !busy && account?.supported == true && Date() >= gate.refreshAfter }
     var serverNow: Date { serverAt.addingTimeInterval(Date().timeIntervalSince(receivedAt)) }
     var expired: Bool { account?.expired(at: serverNow, staleAfter: result?.staleAfterSeconds) ?? false }
-    var title: String { account?.menuTitle(expired: expired) ?? (configured ? "CPA · —" : "CPA · 设置") }
+    var title: String {
+        let title = account?.menuTitle(expired: expired) ?? (configured ? "CPA · —" : "CPA · 设置")
+        return connectionFailed && !title.hasSuffix(" !") ? title + " !" : title
+    }
     var loginStatus: String {
         switch SMAppService.mainApp.status {
         case .enabled: return "已开启"
@@ -82,6 +86,7 @@ final class QuotaStore: ObservableObject {
         generation = UUID()
         result = nil
         busy = false
+        connectionFailed = false
         gate = RequestGate()
         origin = normalized
         key = nextKey
@@ -99,6 +104,7 @@ final class QuotaStore: ObservableObject {
         api = nil
         result = nil
         busy = false
+        connectionFailed = false
         message = "已删除此服务的 Keychain 密钥。"
     }
     func setLogin(_ enabled: Bool) throws {
@@ -127,6 +133,7 @@ final class QuotaStore: ObservableObject {
                 else { data = try await api.read(key: key) }
                 guard let self, !Task.isCancelled, version == self.generation else { return }
                 self.result = data
+                self.connectionFailed = false
                 self.receivedAt = Date()
                 self.serverAt = parseDate(data.serverTime) ?? self.receivedAt
                 self.message = refresh ? data.refreshFeedback : ""
@@ -141,6 +148,7 @@ final class QuotaStore: ObservableObject {
                 guard let self, !Task.isCancelled, version == self.generation else { return }
                 // Never show raw server bodies, URLs, or credential-bearing transport errors.
                 self.message = (error as? APIError)?.localizedDescription ?? "连接失败，请检查网络、HTTPS 证书与服务地址；显示上次结果。"
+                self.connectionFailed = true
                 if let apiError = error as? APIError, apiError == .unauthorized || apiError == .forbidden { self.result = nil }
                 self.gate.failure(error, now: Date())
             }

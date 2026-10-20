@@ -1,7 +1,7 @@
 import Foundation
 
 // Redirects are refused even on the same origin. TLS uses system trust without exceptions.
-public class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+public final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     public func urlSession(_ session: URLSession, task: URLSessionTask,
                            willPerformHTTPRedirection response: HTTPURLResponse,
                            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
