@@ -142,7 +142,7 @@ internal sealed class TrayContext : ApplicationContext
         if(activityInitialized&&active==value)return;
         activityInitialized=true;active=value;generation++;timer.Stop();
         var previous=request;request=null;if(previous!=null)previous.Cancel();
-        form.SetBusy(false);form.ClearAccounts();strip.UpdateData(null,value?"正在读取缓存":"等待 Codex");
+        form.SetBusy(false);form.ClearAccounts();strip.UpdateData(null,value?"正在查询额度…":"等待 Codex");
         if(!value){strip.Hide();form.SuspendPopup();tray.Text="CPAplus 额度 · 等待 Codex";}
         else {form.SetPaused(false);if(key!=null){timer.Start();var read=Refresh();}}
         WriteActivityEvidence();
@@ -189,7 +189,7 @@ internal sealed class TrayContext : ApplicationContext
         key = next;
         form.SetKeyLabel(key);
         form.ClearAccounts();
-        strip.UpdateData(null,"正在读取缓存");
+        strip.UpdateData(null,"正在查询额度…");
         form.SetStatus("已保存到 Windows 凭据管理器。", false);
         form.KeySaved();
         if(active)timer.Start();
@@ -199,7 +199,7 @@ internal sealed class TrayContext : ApplicationContext
     internal async Task Refresh(bool manual=false)
     {
         if (exiting || request != null) return;
-        if(!active||key==null){if(manual)form.SetReadFeedback(key==null?"请先在设置中连接密钥。":"Codex 未运行，额度读取已暂停。");return;}
+        if(!active||key==null){if(manual)form.SetReadFeedback(key==null?"请先在设置中连接密钥。":"Codex 未运行，额度查询已暂停。");return;}
         readAttempts++;
         int version = generation;
         var cancellation = new CancellationTokenSource();
@@ -207,7 +207,7 @@ internal sealed class TrayContext : ApplicationContext
         form.SetBusy(true);
         try
         {
-            if(manual)form.SetReadFeedback("正在请求刷新…");
+            if(manual)form.SetReadFeedback("正在查询额度…");
             var alias=strip.SelectedAlias;
             var data = manual&&alias!=null?await api.RefreshAsync(key,alias,cancellation.Token):await api.ReadAsync(key, cancellation.Token);
             if (exiting || generation != version) return;
@@ -227,7 +227,7 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (OperationCanceledException)
         {
-            if (!exiting && generation == version) { form.ClearAccounts(); strip.UpdateData(null,"缓存读取超时");form.SetStatus("读取超时，15 秒后重试；不会查询供应商。", true); }
+            if (!exiting && generation == version) { form.ClearAccounts(); strip.UpdateData(null,"查询超时");form.SetStatus("查询超时，将自动重试。", true); }
         }
         catch (System.Net.Http.HttpRequestException) { ReadFailed(version); }
         catch (InvalidOperationException) { ReadFailed(version); }
@@ -242,7 +242,7 @@ internal sealed class TrayContext : ApplicationContext
 
     private void ReadFailed(int version)
     {
-        if (!exiting && generation == version) { form.ClearAccounts();strip.UpdateData(null,"缓存暂不可读"); form.SetStatus("服务器暂不可用，15 秒后重试。", true); }
+        if (!exiting && generation == version) { form.ClearAccounts();strip.UpdateData(null,"暂时无法查询"); form.SetStatus("暂时无法查询额度，将自动重试。", true); }
     }
 
     protected override void ExitThreadCore()

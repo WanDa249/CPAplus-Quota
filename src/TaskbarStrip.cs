@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -27,9 +28,14 @@ internal sealed class TaskbarStrip : Form
     internal event EventHandler DetailsRequested;
     internal event Action<string> AccountSelected;
     private QuotaResult data;
-    private string error="正在读取缓存",selected;
+    private string error="正在查询额度…",selected;
     private Rectangle lastBounds;
     private string lastText;
+    private string paintedText,paintedAlias;
+    private readonly Timer transition=new Timer {Interval=25};
+    private readonly Stopwatch transitionClock=new Stopwatch();
+    private Bitmap transitionFrame;
+    private Rectangle transitionBounds;
     internal string CurrentText {get;private set;}
     internal QuotaResult CurrentData {get{return data;}}
     internal string SelectedAlias { get { var a=Account();return a==null?null:a.alias; } }
@@ -39,6 +45,12 @@ internal sealed class TaskbarStrip : Form
         Text="CPAplus 任务栏额度实验";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;
         AutoScaleMode=AutoScaleMode.None;
         MouseUp+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left&&DetailsRequested!=null)DetailsRequested(this,EventArgs.Empty);};
+        transition.Tick+=delegate {
+            if(!Visible){StopTransition();lastText=null;return;}
+            byte alpha=TransitionAlpha(transitionClock.Elapsed.TotalMilliseconds);
+            PaintLayer(transitionFrame,transitionBounds,alpha);
+            if(alpha==255)StopTransition();
+        };
         var handle=Handle;
     }
     protected override bool ShowWithoutActivation {get{return true;}}
@@ -55,8 +67,8 @@ internal sealed class TaskbarStrip : Form
         selected=a.alias;
         if(previous!=selected&&AccountSelected!=null)AccountSelected(selected);
         var text=new StringBuilder(AccountNames.Label(a)+"\n");
-        text.Append(a.frozen?"已冻结":a.disabled?"已停用":a.available?"一般状态可用":"当前不可用");
-        text.Append(a.stale?" · 缓存已过期":" · 缓存有效");
+        text.Append(a.frozen?"已冻结":a.disabled?"已停用":a.available?"可用":"当前不可用");
+        if(a.stale)text.Append(" · 额度信息已过期");
         if(a.cacheStatus=="error")text.Append(" · 最近查询失败");
         text.Append("\n五小时重置 "+Theme.Time(a.fiveHour==null?null:a.fiveHour.resetAt));
         text.Append("\n周额度重置 "+Theme.Time(a.weekly==null?null:a.weekly.resetAt));
@@ -101,6 +113,7 @@ internal sealed class TaskbarStrip : Form
 
     internal bool Present(Rectangle bar,int freeLeft,int trayLeft,int dpi)
     {
+        bool wasVisible=Visible;
         var a=Account();string text=a==null?(error??"额度不可用"):!a.supported?"额度不支持":"5h "+Percent(a.fiveHour)+" · 周 "+Percent(a.weekly);
         float scale=dpi/96f;
         using(var font=new Font(UiFonts.Taskbar,12*scale,FontStyle.Regular,GraphicsUnit.Pixel))
@@ -133,16 +146,30 @@ internal sealed class TaskbarStrip : Form
                         if(a.stale||a.frozen||a.disabled||a.cacheStatus=="error")using(var dot=new SolidBrush(QuotaColor(40,light)))drawing.FillEllipse(dot,bounds.Width-4*scale,(bounds.Height-3*scale)/2,3*scale,3*scale);
                     }else using(var brush=new SolidBrush(QuotaColor(null,light))){format.Alignment=StringAlignment.Center;format.LineAlignment=StringAlignment.Center;drawing.DrawString(text,font,brush,new RectangleF(0,0,bounds.Width,bounds.Height),format);}
                 }
-                PaintLayer(image,bounds);
+                bool animate=AnimateChange(paintedText,text,paintedAlias,a==null?null:a.alias,wasVisible,a!=null&&AccountPresentation.ColorQuota(a),System.Windows.SystemParameters.ClientAreaAnimation);
+                StopTransition();
+                if(animate){transitionFrame=(Bitmap)image.Clone();transitionBounds=bounds;transitionClock.Restart();transition.Start();}
+                PaintLayer(image,bounds,animate?TransitionAlpha(0):((byte)255));
             }
+            paintedText=text;paintedAlias=a==null?null:a.alias;
             lastBounds=bounds;lastText=text;return true;
         }
     }
-    private void PaintLayer(Bitmap bitmap,Rectangle bounds)
+    internal static bool AnimateChange(string previousText,string nextText,string previousAlias,string nextAlias,bool visible,bool usable,bool motion)
+    {
+        return visible&&usable&&motion&&previousText!=null&&previousText!=nextText&&previousAlias!=null&&previousAlias==nextAlias;
+    }
+    internal static byte TransitionAlpha(double milliseconds)
+    {
+        double progress=Math.Max(0,Math.Min(1,milliseconds/200));return (byte)Math.Round(208+47*(1-Math.Pow(1-progress,3)));
+    }
+    private void StopTransition(){transition.Stop();transitionClock.Stop();if(transitionFrame!=null){transitionFrame.Dispose();transitionFrame=null;}}
+    protected override void OnVisibleChanged(EventArgs e){if(!Visible){StopTransition();lastText=null;}base.OnVisibleChanged(e);}
+    private void PaintLayer(Bitmap bitmap,Rectangle bounds,byte alpha)
     {
         IntPtr screen=GetDC(IntPtr.Zero),memory=CreateCompatibleDC(screen),image=bitmap.GetHbitmap(Color.FromArgb(0)),previous=SelectObject(memory,image);
-        try {var dest=new Point(bounds.X,bounds.Y);var size=new LayerSize(bounds.Width,bounds.Height);var origin=new Point(0,0);var blend=new Blend {Alpha=255,Format=1};UpdateLayeredWindow(Handle,screen,ref dest,ref size,memory,ref origin,0,ref blend,2);}
+        try {var dest=new Point(bounds.X,bounds.Y);var size=new LayerSize(bounds.Width,bounds.Height);var origin=new Point(0,0);var blend=new Blend {Alpha=alpha,Format=1};UpdateLayeredWindow(Handle,screen,ref dest,ref size,memory,ref origin,0,ref blend,2);}
         finally{SelectObject(memory,previous);DeleteObject(image);DeleteDC(memory);ReleaseDC(IntPtr.Zero,screen);}
     }
-    protected override void Dispose(bool disposing){if(disposing)tooltip.Dispose();base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing){StopTransition();transition.Dispose();tooltip.Dispose();}base.Dispose(disposing);}
 }

@@ -190,7 +190,7 @@
         <TextBlock x:Name="KeyLabel" FontSize="12" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
       </DockPanel>
       <Expander Header="连接详情" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,6,0,0">
-        <TextBlock Text="使用 HTTPS 连接 CPA 服务。&#10;密钥保存在 Windows 凭据管理器。&#10;每 15 秒读取服务端缓存，不发起供应商查询。" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
+        <TextBlock Text="使用 HTTPS 连接 CPA 服务。&#10;密钥保存在 Windows 凭据管理器。&#10;每 15 秒自动查询额度，更新时间以上次成功结果为准。" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
       </Expander>
       <TextBlock x:Name="SettingsNotice" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
     </StackPanel>

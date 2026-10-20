@@ -138,7 +138,7 @@ internal sealed class QuotaPopup : Window
         B<TextBlock>("FailureText").Foreground=Resource("Muted");
         B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?Visibility.Collapsed:Visibility.Visible;
     }
-    internal void SetBusy(bool busy){B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"刷新中…":"刷新";}
+    internal void SetBusy(bool busy){B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"查询中…":"刷新";}
     internal void SetStatus(string text,bool error)
     {
         if(error){B<TextBlock>("FailureText").Foreground=Resource("Warning");B<TextBlock>("FailureText").Text=text;B<TextBlock>("FailureText").Visibility=Visibility.Visible;}

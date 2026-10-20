@@ -58,11 +58,11 @@ internal static class AccountPresentation
         switch(data.refreshStatus){
         case "success":return "额度已更新。";
         case "cached":return "";
-        case "deferred":return "查询冷却中，保留上次额度，请稍后再试。";
+        case "deferred":return "请稍后再试，当前显示最近一次额度。";
         case "error":return "额度查询失败，保留上次结果；未更新成功时间。";
         case "unsupported":return "此账号不支持额度查询。";
-        case "not_supported":return "已读取缓存；服务器主动查询尚未上线，额度更新时间未改变。";
-        default:return "已读取服务器缓存；额度更新时间未改变时，表示暂无新结果。";
+        case "not_supported":return "当前显示最近一次额度，暂未获取到新结果。";
+        default:return "查询完成，暂无新的额度信息。";
         }
     }
     internal static string State(QuotaAccount a)
@@ -75,9 +75,9 @@ internal static class AccountPresentation
     internal static string CacheState(QuotaAccount a)
     {
         if(!a.supported)return "不支持额度查询";
-        if(a.cacheStatus=="error")return a.stale?"缓存过期 · 查询失败":"查询失败 · 显示上次结果";
-        if(a.stale)return "缓存过期 · 非实时额度";
-        if(a.cacheStatus=="unavailable")return "暂无额度缓存";
+        if(a.cacheStatus=="error")return a.stale?"数据已过期 · 查询失败":"查询失败 · 显示上次结果";
+        if(a.stale)return "额度信息已过期";
+        if(a.cacheStatus=="unavailable")return "暂无额度数据";
         return "";
     }
     internal static string Percent(QuotaWindow w){return w==null||!w.remainingPercent.HasValue?"—":w.remainingPercent.Value.ToString("0")+"%";}
@@ -94,6 +94,6 @@ internal static class AccountPresentation
     internal static string Summary(QuotaAccount a)
     {
         if(!Usable(a))return State(a);
-        return !a.supported?"不支持查询":Percent(a.fiveHour)+" / "+Percent(a.weekly)+(a.stale?" · 缓存过期":a.cacheStatus=="error"?" · 查询失败":"");
+        return !a.supported?"不支持查询":Percent(a.fiveHour)+" / "+Percent(a.weekly)+(a.stale?" · 数据已过期":a.cacheStatus=="error"?" · 查询失败":"");
     }
 }
