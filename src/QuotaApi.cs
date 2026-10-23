@@ -32,10 +32,17 @@ internal sealed class QuotaAccount
 
 internal sealed class QuotaResult
 {
+    public AccountSelection selection { get; set; }
     public List<QuotaAccount> accounts { get; set; }
     public string serverTime { get; set; }
     public int staleAfterSeconds { get; set; }
     public string refreshStatus { get; set; }
+}
+
+internal sealed class AccountSelection
+{
+    public string mode {get;set;}
+    public string alias {get;set;}
 }
 
 internal sealed class QuotaAuthException : Exception
@@ -85,22 +92,27 @@ internal sealed class QuotaApi : IDisposable
         return SendAsync(key, alias, cancellation);
     }
 
-    private async Task<QuotaResult> SendAsync(string key, string alias, CancellationToken cancellation)
+    internal Task<QuotaResult> SelectAccountAsync(string key,string alias,CancellationToken cancellation)
+    {
+        return SendAsync(key,alias??"",cancellation,true);
+    }
+
+    private async Task<QuotaResult> SendAsync(string key, string alias, CancellationToken cancellation,bool selection=false)
     {
         if (!IsValidKey(key)) throw new ArgumentException("Invalid CPA API Key.");
-        using (var request = new HttpRequestMessage(alias==null?HttpMethod.Get:HttpMethod.Post, origin + "/v1/me/quotas"+(alias==null?"":"/refresh")))
+        using (var request = new HttpRequestMessage(selection?HttpMethod.Put:alias==null?HttpMethod.Get:HttpMethod.Post, origin + (selection?"/v1/me/account-selection":"/v1/me/quotas"+(alias==null?"":"/refresh"))))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             if(alias!=null)request.Headers.Add("X-Quota-Account",alias.Replace("账号 ",""));
             request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
             using(var operation=CancellationTokenSource.CreateLinkedTokenSource(cancellation))
             {
-            operation.CancelAfter(TimeSpan.FromSeconds(alias==null?8:125));
+            operation.CancelAfter(TimeSpan.FromSeconds(selection||alias==null?8:125));
             using (var response = await client.SendAsync(request, operation.Token))
             {
                 if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
                     throw new QuotaAuthException(response.StatusCode == HttpStatusCode.Forbidden);
-                if(alias!=null&&(response.StatusCode==HttpStatusCode.NotFound||response.StatusCode==HttpStatusCode.MethodNotAllowed)) {
+                if(!selection&&alias!=null&&(response.StatusCode==HttpStatusCode.NotFound||response.StatusCode==HttpStatusCode.MethodNotAllowed)) {
                     var cached=await ReadAsync(key,cancellation);
                     cached.refreshStatus="not_supported";
                     return cached;

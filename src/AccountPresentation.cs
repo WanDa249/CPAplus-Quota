@@ -81,6 +81,13 @@ internal static class AccountPresentation
         return "";
     }
     internal static string Percent(QuotaWindow w){return w==null||!w.remainingPercent.HasValue?"—":w.remainingPercent.Value.ToString("0")+"%";}
+    internal static string[] QuotaParts(QuotaAccount a,bool compact)
+    {
+        var parts=new List<string>();string gap=compact?"":" ";
+        if(a.fiveHour!=null)parts.Add("5h"+gap+Percent(a.fiveHour));
+        if(a.weekly!=null)parts.Add("周"+gap+Percent(a.weekly));
+        return parts.Count==0?new[]{"额度待更新"}:parts.ToArray();
+    }
     internal static string Reset(string value)
     {
         DateTimeOffset time;if(!DateTimeOffset.TryParse(value,out time))return "重置时间未知";
@@ -94,6 +101,6 @@ internal static class AccountPresentation
     internal static string Summary(QuotaAccount a)
     {
         if(!Usable(a))return State(a);
-        return !a.supported?"不支持查询":Percent(a.fiveHour)+" / "+Percent(a.weekly)+(a.stale?" · 数据已过期":a.cacheStatus=="error"?" · 查询失败":"");
+        return !a.supported?"不支持查询":string.Join(" · ",QuotaParts(a,false))+(a.stale?" · 数据已过期":a.cacheStatus=="error"?" · 查询失败":"");
     }
 }

@@ -18,7 +18,7 @@ internal static class UiFonts
         // Publish complete files atomically so an interrupted first run can retry.
         string folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CPAplusQuota","Fonts","source-han-sans-a4f7cf94edfb");
         Directory.CreateDirectory(folder);
-        foreach(string file in new[]{"SourceHanSansCN-Regular.otf","SourceHanSansCN-Medium.otf","LICENSE.txt","THIRD_PARTY_NOTICES-v0.1.1-beta.txt"}){
+        foreach(string file in new[]{"SourceHanSansCN-Regular.otf","SourceHanSansCN-Medium.otf","LICENSE.txt","THIRD_PARTY_NOTICES-v0.1.2-beta.txt"}){
             string destination=Path.Combine(folder,file);
             if(File.Exists(destination))continue;
             string temporary=destination+"."+Guid.NewGuid().ToString("N")+".tmp";

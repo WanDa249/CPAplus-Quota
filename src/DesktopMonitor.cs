@@ -100,7 +100,7 @@ internal sealed class DesktopMonitor : IDisposable
         // Out-of-context hooks run on the installing message-loop thread.
         eventTimer.Start();
     }
-    private bool Fullscreen(Rectangle bar)
+    internal static bool Fullscreen(Rectangle bar)
     {
         IntPtr front=DesktopFacts.GetForegroundWindow();string cls=DesktopFacts.Class(front);
         if(front==IntPtr.Zero||cls=="Progman"||cls=="WorkerW"||cls=="Shell_TrayWnd"||cls=="Shell_SecondaryTrayWnd"||DesktopFacts.IsIconic(front)||DesktopFacts.Cloaked(front))return false;

@@ -62,6 +62,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 15000 };
     private readonly ToolStripMenuItem pinMenu = new ToolStripMenuItem("置顶悬浮") { CheckOnClick = true };
     private CancellationTokenSource request;
+    private bool readingCache;
     private int generation;
     private string key;
     private bool exiting;
@@ -82,9 +83,10 @@ internal sealed class TrayContext : ApplicationContext
         desktop = new DesktopMonitor(strip);
         strip.AccountSelected += delegate(string alias){form.SetPrimaryAlias(alias);};
         form.AccountSelected += delegate(string alias){strip.SelectAccount(alias);};
+        form.PreferAccountRequested += async delegate(string alias){await SelectPreference(alias);};
         form.NotesChanged += delegate {strip.RefreshNames();};
         form.ExitRequested += delegate { ExitThread(); };
-        strip.DetailsRequested += delegate { form.ShowPopup(); };
+        strip.DetailsRequested += delegate { form.TogglePopup(); };
         var modes = new ToolStripMenuItem("显示时机");
         var labels = new[] { "Codex 图形应用运行时", "仅 Codex 在前台", "始终显示", "Codex 未最小化时显示", "隐藏任务栏额度" };
         Action<int> selectMode=delegate(int value){
@@ -115,7 +117,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, delegate { ExitThread(); });
         tray = new NotifyIcon { Icon = icon, Text = "CPAplus 额度", ContextMenuStrip = menu, Visible = true };
-        tray.MouseClick += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) form.ShowPopup(); };
+        tray.MouseClick += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) form.TogglePopup(); };
         form.RefreshRequested += async delegate { await Refresh(true); };
         form.ConfigureRequested += delegate { Configure(); };
         form.KeySaveRequested += SaveKey;
@@ -126,7 +128,7 @@ internal sealed class TrayContext : ApplicationContext
         catch (System.ComponentModel.Win32Exception) { form.SetStatus("无法读取 Windows 凭据，请重新配置密钥。", true); }
         if (!QuotaApi.IsValidKey(key)) key = null;
         form.PopupCreated+=delegate {
-            form.SetKeyLabel(key);form.SetDisplayMode((int)desktop.Mode);form.SetPinned(pinMenu.Checked);form.SetBusy(request!=null);form.SetStartup(StartupRegistration.Enabled);
+            form.SetKeyLabel(key);form.SetDisplayMode((int)desktop.Mode);form.SetPinned(pinMenu.Checked);form.SetBusy(request!=null&&!readingCache);form.SetStartup(StartupRegistration.Enabled);
             if(strip.CurrentData!=null)form.ShowAccounts(strip.CurrentData,strip.SelectedAlias);
             form.SetPaused(!active);
         };
@@ -196,15 +198,46 @@ internal sealed class TrayContext : ApplicationContext
         var read = Refresh();
     }
 
+    private async Task SelectPreference(string alias)
+    {
+        if(exiting||!active||key==null||(request!=null&&!readingCache))return;
+        int version=++generation;
+        var previous=request;request=null;if(previous!=null)previous.Cancel();
+        var cancellation=new CancellationTokenSource();request=cancellation;readingCache=false;form.SetBusy(true);
+        try {
+            form.SetReadFeedback("正在切换调用账号…");
+            var data=await api.SelectAccountAsync(key,alias,cancellation.Token);
+            if(exiting||generation!=version)return;
+            if(data.selection==null)throw new InvalidOperationException("Missing selection response.");
+            strip.UpdateData(data,null);
+            if(alias!=null&&data.selection.mode=="manual"&&data.selection.alias==alias)strip.SelectAccount(alias);
+            else if(data.selection.mode=="auto")strip.SelectDefaultAccount();
+            form.ShowAccounts(data,strip.SelectedAlias);
+            form.SetReadFeedback(data.selection.mode=="manual"?"已优先使用所选账号。":"已恢复按优先级自动排序。");
+        }
+        catch(QuotaAuthException){if(!exiting&&generation==version){timer.Stop();form.ClearAccounts();strip.UpdateData(null,"密钥不可用");form.SetStatus("密钥无效或绑定已变更，请重新连接。",true);}}
+        catch(System.Net.Http.HttpRequestException){SelectionFailed(version);}
+        catch(OperationCanceledException){SelectionFailed(version);}
+        catch(InvalidOperationException){SelectionFailed(version);}
+        catch(ArgumentException){SelectionFailed(version);}
+        finally {if(request==cancellation){request=null;if(!exiting)form.SetBusy(false);}cancellation.Dispose();}
+    }
+
+    private void SelectionFailed(int version){if(!exiting&&generation==version)form.SetReadFeedback("切换未确认，请刷新账号状态后重试。");}
+
     internal async Task Refresh(bool manual=false)
     {
-        if (exiting || request != null) return;
+        if (exiting) return;
+        if(request!=null){
+            if(!manual||!readingCache)return;
+            generation++;var previous=request;request=null;previous.Cancel();
+        }
         if(!active||key==null){if(manual)form.SetReadFeedback(key==null?"请先在设置中连接密钥。":"Codex 未运行，额度查询已暂停。");return;}
         readAttempts++;
         int version = generation;
         var cancellation = new CancellationTokenSource();
         request = cancellation;
-        form.SetBusy(true);
+        readingCache=!manual;form.SetBusy(manual);
         try
         {
             if(manual)form.SetReadFeedback("正在查询额度…");
@@ -212,6 +245,8 @@ internal sealed class TrayContext : ApplicationContext
             var data = manual&&alias!=null?await api.RefreshAsync(key,alias,cancellation.Token):await api.ReadAsync(key, cancellation.Token);
             if (exiting || generation != version) return;
             strip.UpdateData(data,null);
+            if(data.selection!=null&&data.selection.mode=="manual")strip.SelectAccount(data.selection.alias);
+            else if(data.selection!=null)strip.SelectDefaultAccount();
             form.ShowAccounts(data,strip.SelectedAlias);
             if(manual)form.SetReadFeedback(AccountPresentation.RefreshFeedback(data));
             tray.Text = "CPAplus 额度 · " + data.accounts.Count + " 个绑定账号";
@@ -227,7 +262,7 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (OperationCanceledException)
         {
-            if (!exiting && generation == version) { form.ClearAccounts(); strip.UpdateData(null,"查询超时");form.SetStatus("查询超时，将自动重试。", true); }
+            ReadFailed(version,true);
         }
         catch (System.Net.Http.HttpRequestException) { ReadFailed(version); }
         catch (InvalidOperationException) { ReadFailed(version); }
@@ -240,9 +275,14 @@ internal sealed class TrayContext : ApplicationContext
         }
     }
 
-    private void ReadFailed(int version)
+    private void ReadFailed(int version,bool timeout=false)
     {
-        if (!exiting && generation == version) { form.ClearAccounts();strip.UpdateData(null,"暂时无法查询"); form.SetStatus("暂时无法查询额度，将自动重试。", true); }
+        if (!exiting && generation == version) {
+            string message=timeout?"查询超时":"暂时无法连接";
+            bool retained=strip.CurrentData!=null;strip.UpdateData(strip.CurrentData,message);
+            form.SetStatus(message+(retained?"，显示上次结果；将自动重试。":"，将自动重试。"),true);
+            tray.Text="CPAplus 额度 · "+message;
+        }
     }
 
     protected override void ExitThreadCore()

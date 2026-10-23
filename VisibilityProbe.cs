@@ -7,7 +7,10 @@ using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Microsoft.Win32;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 internal static class VisibilityProbe
 {
@@ -18,6 +21,7 @@ internal static class VisibilityProbe
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [StructLayout(LayoutKind.Sequential)] private struct Rect {public int left,top,right,bottom;}
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window,out Rect rect);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
     private static Type T(string name){return app.GetType(name,true);}
     private static object Mode(string name){return Enum.Parse(T("VisibilityMode"),name);}
     private static object Call(string type,string method,object instance,params object[] args){return T(type).GetMethod(method,Flags).Invoke(instance,args);}
@@ -35,6 +39,23 @@ internal static class VisibilityProbe
         var timer=new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Send) {Interval=TimeSpan.FromMilliseconds(milliseconds)};
         timer.Tick+=delegate {frame.Continue=false;};timer.Start();System.Windows.Threading.Dispatcher.PushFrame(frame);timer.Stop();
     }
+    private static System.Collections.Generic.IEnumerable<DependencyObject> Visuals(DependencyObject parent)
+    {
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++){
+            var child=VisualTreeHelper.GetChild(parent,i);yield return child;
+            foreach(var descendant in Visuals(child))yield return descendant;
+        }
+    }
+    private static void Snapshot(FrameworkElement element,string name)
+    {
+        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth*1.5),(int)Math.Ceiling(element.ActualHeight*1.5),144,144,PixelFormats.Pbgra32);
+        bitmap.Render(element);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using(var file=File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","evidence",name+".png")))encoder.Save(file);
+    }
+    private static void Escape(Window window)
+    {
+        window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(window),0,Key.Escape){RoutedEvent=Keyboard.PreviewKeyDownEvent});
+    }
 
     [STAThread] private static int Main(string[] args)
     {
@@ -43,7 +64,8 @@ internal static class VisibilityProbe
         try {
             hive=Registry.CurrentUser.CreateSubKey(registry);
             Require(RegOverridePredefKey(new IntPtr(unchecked((int)0x80000001)),hive.Handle.DangerousGetHandle())==0,"settings isolated from current user");
-            app=Assembly.LoadFrom(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"CPAplusQuota.exe"));
+            using(var theme=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))theme.SetValue("SystemUsesLightTheme",1);
+            app=Assembly.LoadFrom(args.Length>1&&args[0]=="--app"?args[1]:Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"CPAplusQuota.exe"));
             Require(Reason("CodexRunning",false)=="codex-closed","closed Codex hides default mode");
             Require(Reason("CodexRunning",false,true)==null,"existing default still shows minimized Codex");
             Require(Reason("CodexNotMinimized",false)=="codex-closed","new mode hides absent Codex");
@@ -120,6 +142,15 @@ internal static class VisibilityProbe
             var elapsed=System.Diagnostics.Stopwatch.StartNew();while(elapsed.ElapsedMilliseconds<300){System.Windows.Forms.Application.DoEvents();System.Threading.Thread.Sleep(10);}
             Require(!transition.Enabled&&T("TaskbarStrip").GetField("transitionFrame",Flags).GetValue(strip)==null,"real layered-window animation finishes and releases its frame");
             Require(GetForegroundWindow()!=((System.Windows.Forms.Form)strip).Handle,"real strip render and animation do not take focus");
+            var week=Activator.CreateInstance(T("QuotaWindow"),true);T("QuotaWindow").GetProperty("remainingPercent").SetValue(week,61d,null);
+            T("QuotaAccount").GetProperty("weekly").SetValue(account,week,null);T("QuotaAccount").GetProperty("fiveHour").SetValue(account,null,null);
+            Call("TaskbarStrip","UpdateData",strip,result,null);Call("TaskbarStrip","Present",strip,new System.Drawing.Rectangle(-32000,-32000,1000,48),-32000,-31000,96);
+            Require((string)T("TaskbarStrip").GetProperty("CurrentText",Flags).GetValue(strip,null)=="周 61%","weekly-only account omits nonexistent five-hour quota in real strip");
+            T("QuotaAccount").GetProperty("fiveHour").SetValue(account,five,null);
+            T("QuotaWindow").GetProperty("remainingPercent").SetValue(five,0d,null);
+            Call("TaskbarStrip","UpdateData",strip,result,null);Call("TaskbarStrip","Present",strip,new System.Drawing.Rectangle(-32000,-32000,1000,48),-32000,-31000,96);
+            Require((string)T("TaskbarStrip").GetProperty("CurrentText",Flags).GetValue(strip,null)=="5h 0% · 周 61%","exhausted five-hour quota stays visible rather than being mistaken for absent quota");
+            T("QuotaWindow").GetProperty("remainingPercent").SetValue(five,61d,null);
             ((System.Windows.Forms.Form)strip).Hide();
             var extra=Activator.CreateInstance(T("QuotaAccount"),true);T("QuotaAccount").GetProperty("alias").SetValue(extra,"backup-test",null);accountList.Add(extra);
             T("QuotaAccount").GetProperty("stale").SetValue(account,false,null);
@@ -169,8 +200,109 @@ internal static class VisibilityProbe
                 Require(maxNative==0&&maxRender==0,"native and rendered bottom edge remains fixed during expand and collapse");
                 Require(maxRefresh==0,"expanded refresh has no transient height change in any recorded frame");
             }
+            for(int i=0;i<3;i++){
+                var other=Activator.CreateInstance(T("QuotaAccount"),true);
+                T("QuotaAccount").GetProperty("alias").SetValue(other,"layout-"+i,null);
+                T("QuotaAccount").GetProperty("displayName").SetValue(other,"very-long-account-name-"+i+"@example.invalid",null);
+                foreach(string flag in new[]{"available","availabilityKnown","supported"})T("QuotaAccount").GetProperty(flag).SetValue(other,true,null);
+                T("QuotaAccount").GetProperty("weekly").SetValue(other,week,null);
+                if(i!=2)T("QuotaAccount").GetProperty("fiveHour").SetValue(other,five,null);
+                T("QuotaAccount").GetProperty("stale").SetValue(other,i==1,null);accountList.Add(other);
+            }
+            Call("QuotaPopup","SetData",popup,result);others.IsExpanded=true;Pump(350);
+            var rows=(StackPanel)root.FindName("AccountRows");
+            foreach(double width in new[]{320d,368d})foreach(double scale in new[]{1d,1.25d,1.5d}){
+                root.LayoutTransform=new ScaleTransform(scale,scale);window.Width=width*scale;Pump(350);
+                foreach(Expander row in rows.Children){
+                    var header=(Grid)row.Header;var summary=(TextBlock)header.Children[1];
+                    var arrow=Visuals(row).OfType<TextBlock>().Single(text=>text.Name=="Chevron");
+                    var headerBounds=header.TransformToAncestor(row).TransformBounds(new System.Windows.Rect(0,0,header.ActualWidth,header.ActualHeight));
+                    var summaryBounds=summary.TransformToAncestor(row).TransformBounds(new System.Windows.Rect(0,0,summary.ActualWidth,summary.ActualHeight));
+                    var arrowBounds=arrow.TransformToAncestor(row).TransformBounds(new System.Windows.Rect(0,0,arrow.ActualWidth,arrow.ActualHeight));
+                    Require(summaryBounds.Right<=arrowBounds.Left&&headerBounds.Right<=row.ActualWidth,"summary fits before chevron at "+width+" DIP / "+scale+" scale");
+                }
+            }
+            root.LayoutTransform=Transform.Identity;window.Width=368;Pump(350);Snapshot(root,"accounts-collapsed");
+            ((Expander)rows.Children[2]).IsExpanded=true;Pump(350);
+            var scroll=(ScrollViewer)root.FindName("OtherScroll");
+            Require(scroll.ScrollableHeight>0,"expanded multi-account list scrolls within a bounded viewport");
+            var scrollbar=Visuals(scroll).OfType<System.Windows.Controls.Primitives.ScrollBar>().First(bar=>bar.Orientation==Orientation.Vertical);
+            Console.WriteLine("MEASURE scrollbar width="+scrollbar.ActualWidth+" min="+scrollbar.MinWidth+" template="+scrollbar.Template);
+            Require(scrollbar.ActualWidth<=6.5,"account scrollbar uses narrow unobtrusive track");
+            scroll.ScrollToBottom();Pump(100);Require(scroll.VerticalOffset>0,"styled scrollbar retains real scroll behavior");scroll.ScrollToTop();Pump(100);
+            Snapshot(root,"accounts-expanded");double expandedRest=window.ActualHeight;
+            var retainedRow=(Expander)rows.Children[2];var retainedButton=((StackPanel)retainedRow.Content).Children.OfType<Button>().Single();
+            scroll.ScrollToBottom();Pump(80);double retainedOffset=scroll.VerticalOffset;
+            FocusManager.SetFocusedElement(window,retainedButton);
+            Call("QuotaPopup","SetBusy",popup,true);Call("QuotaPopup","SetData",popup,result);Call("QuotaPopup","SetBusy",popup,false);Pump(350);
+            Require(Math.Abs(window.ActualHeight-expandedRest)<0.5,"new account cards preserve expanded height during refresh");
+            Require(object.ReferenceEquals(rows.Children[2],retainedRow)&&object.ReferenceEquals(((StackPanel)retainedRow.Content).Children.OfType<Button>().Single(),retainedButton),"background update retains actual account and action controls");
+            Require(retainedRow.IsExpanded&&Math.Abs(scroll.VerticalOffset-retainedOffset)<0.5&&object.ReferenceEquals(FocusManager.GetFocusedElement(window),retainedButton),"background update retains expansion, scroll position and logical focus");
+            var renderTimes=new System.Collections.Generic.List<double>();
+            for(int pass=0;pass<30;pass++){var clock=System.Diagnostics.Stopwatch.StartNew();Call("QuotaPopup","SetData",popup,result);window.UpdateLayout();clock.Stop();renderTimes.Add(clock.Elapsed.TotalMilliseconds);}
+            renderTimes.Sort();Console.WriteLine("MEASURE account update and layout ms median="+renderTimes[15].ToString("F3")+" max="+renderTimes[29].ToString("F3"));
+            var selection=Activator.CreateInstance(T("AccountSelection"),true);T("AccountSelection").GetProperty("mode").SetValue(selection,"auto",null);T("QuotaResult").GetProperty("selection").SetValue(result,selection,null);
+            Call("QuotaPopup","SetData",popup,result);string requestedAlias=null;
+            T("QuotaPopup").GetEvent("PreferAccountRequested",Flags).GetAddMethod(true).Invoke(popup,new object[]{new Action<string>(alias=>{requestedAlias=alias;Call("QuotaPopup","SetBusy",popup,true);})});
+            retainedButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(requestedAlias=="layout-1"&&others.IsExpanded&&retainedRow.IsExpanded&&(string)retainedButton.Content=="切换中…","account selection acknowledges click immediately and keeps comparison list open");
+            requestedAlias=null;retainedButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Require(requestedAlias==null,"pending account action cannot be submitted twice");Call("QuotaPopup","SetBusy",popup,false);
+            Require(((StackPanel)retainedRow.Content).Children.IndexOf(retainedButton)==1,"account action is reachable above quota details without scrolling to the bottom");
+            double beforeSettingsOffset=scroll.VerticalOffset;
+            ((Button)root.FindName("SettingsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Escape(window);Pump(280);
+            Require(window.IsVisible&&((FrameworkElement)root.FindName("HomePage")).Visibility==Visibility.Visible,"back from settings returns to quota instead of dismissing popup");
+            Require(Math.Abs(scroll.VerticalOffset-beforeSettingsOffset)<0.5,"settings return preserves account list scroll position");
+            Call("QuotaPopup","ShowKeyEditor",popup,"fake-test-key");((PasswordBox)root.FindName("KeyInput")).Password="fake-unsaved-key";Escape(window);Pump(280);
+            Require(((FrameworkElement)root.FindName("SettingsPage")).Visibility==Visibility.Visible&&((PasswordBox)root.FindName("KeyInput")).Password.Length==0,"back from key editor returns one level and clears sensitive draft");
+            ((Button)root.FindName("BackButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump(280);Call("QuotaPopup","TogglePopup",popup);Require(!window.IsVisible,"second click on quota entry dismisses home popup");window.Show();Pump(280);
+            Call("QuotaPopup","SetPrimary",popup,"layout-2");others.IsExpanded=false;Pump(350);
+            Require(((FrameworkElement)root.FindName("FiveMetric")).Visibility==Visibility.Collapsed,"weekly-only primary card hides absent five-hour row");Snapshot(root,"weekly-only");
             others.IsExpanded=true;window.UpdateLayout();Pump(30);window.Hide();Require(!window.HasAnimatedProperties,"hiding popup clears resize animation");
             Require(GetForegroundWindow()!=new System.Windows.Interop.WindowInteropHelper(window).Handle,"popup layout tests do not take focus");
+            var fresh=(Window)Activator.CreateInstance(T("QuotaPopup"),true);fresh.ShowActivated=false;
+            try {
+                Call("QuotaPopup","SetData",fresh,result);double initialLeft=double.NaN,initialTop=double.NaN;
+                var freshRoot=(FrameworkElement)T("QuotaPopup").GetField("root",Flags).GetValue(fresh);
+                Console.WriteLine("MEASURE hidden root font="+System.Windows.Documents.TextElement.GetFontFamily(freshRoot)+" rounding="+freshRoot.UseLayoutRounding+" dpi="+VisualTreeHelper.GetDpi(freshRoot).DpiScaleX);
+                fresh.IsVisibleChanged+=delegate {if(fresh.IsVisible){initialLeft=fresh.Left;initialTop=fresh.Top;Console.WriteLine("MEASURE first visible DIP left="+initialLeft+" top="+initialTop+" height="+fresh.Height);}};
+                Call("QuotaPopup","ShowPopup",fresh);Pump(300);
+                Console.WriteLine("MEASURE first settled DIP left="+fresh.Left+" top="+fresh.Top+" height="+fresh.Height);
+                Console.WriteLine("MEASURE visible root font="+System.Windows.Documents.TextElement.GetFontFamily(freshRoot)+" rounding="+freshRoot.UseLayoutRounding+" dpi="+VisualTreeHelper.GetDpi(freshRoot).DpiScaleX);
+                Require(Math.Abs(initialLeft-fresh.Left)<0.5&&Math.Abs(initialTop-fresh.Top)<0.5,"brand new popup is placed before first visibility without a later snap");
+                Require(GetForegroundWindow()!=new System.Windows.Interop.WindowInteropHelper(fresh).Handle,"first popup positioning does not activate test window");
+            }finally {Call("QuotaPopup","Shutdown",fresh);}
+            window.Topmost=false;others.IsExpanded=false;Pump(300);
+            double firstLeft=double.NaN,firstTop=double.NaN;
+            DependencyPropertyChangedEventHandler shown=delegate {if(window.IsVisible){firstLeft=window.Left;firstTop=window.Top;}};
+            window.IsVisibleChanged+=shown;
+            Call("QuotaPopup","ShowPopup",popup);Pump(300);
+            Require(Math.Abs(firstLeft-window.Left)<0.5&&Math.Abs(firstTop-window.Top)<0.5,"default position is final before window becomes visible");
+            var handle=new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            var transform=PresentationSource.FromVisual(window).CompositionTarget.TransformFromDevice;
+            var area=System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+            double movedLeft=area.Left*transform.M11+60,movedTop=area.Top*transform.M22+45;
+            // Exercise the real native interactive-move notification, without mouse injection.
+            SendMessage(handle,0x231,IntPtr.Zero,IntPtr.Zero);
+            window.Left=movedLeft;window.Top=movedTop;
+            SendMessage(handle,0x232,IntPtr.Zero,IntPtr.Zero);Pump(50);
+            ((Button)root.FindName("CloseButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(!window.IsVisible,"X hides the popup without destroying its position");
+            Call("QuotaPopup","ShowPopup",popup);Pump(300);
+            Require(Math.Abs(window.Left-movedLeft)<1&&Math.Abs(window.Top-movedTop)<1,"X then taskbar reopen preserves manually moved location");
+            Require(Math.Abs(firstLeft-movedLeft)<1&&Math.Abs(firstTop-movedTop)<1,"moved position is restored before first visible frame");
+            others.IsExpanded=true;Pump(300);
+            Require(Math.Abs(window.Left-movedLeft)<1&&Math.Abs(window.Top-movedTop)<1,"expansion keeps manually placed popup top-left stable");
+            Call("QuotaPopup","Settings",popup,true);Pump(300);Call("QuotaPopup","Settings",popup,false);Pump(300);
+            Require(Math.Abs(window.Left-movedLeft)<1&&Math.Abs(window.Top-movedTop)<1,"settings navigation preserves manually placed location");
+            Call("QuotaPopup","SetData",popup,result);Pump(300);
+            Require(Math.Abs(window.Left-movedLeft)<1&&Math.Abs(window.Top-movedTop)<1,"background quota update does not reset user position");
+            window.Hide();window.Left=-32000;window.Top=-32000;
+            Call("QuotaPopup","ShowPopup",popup);Pump(300);
+            area=System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+            Rect visibleBounds;GetWindowRect(handle,out visibleBounds);
+            Require(visibleBounds.left>=area.Left&&visibleBounds.top>=area.Top&&visibleBounds.right<=area.Right&&visibleBounds.bottom<=area.Bottom,"reopening clamps unavailable screen position into current work area");
+            Require(Math.Abs(firstLeft-window.Left)<1&&Math.Abs(firstTop-window.Top)<1,"offscreen recovery finishes before first visible frame");
+            window.IsVisibleChanged-=shown;window.Hide();
             using(var key=Registry.CurrentUser.CreateSubKey(@"Software\CPAplusQuota"))key.SetValue("DisplayMode",99);
             Require((int)Call("DesktopMonitor","LoadMode",null)==0,"unknown saved choice falls back to original default");
             Console.WriteLine("TOTAL "+count+" checks PASS; no credentials read, no HTTP requests");return 0;

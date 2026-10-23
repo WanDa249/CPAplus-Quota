@@ -4,6 +4,7 @@
 
 - 服务地址仅保存在当前Windows用户的 `HKCU\Software\CPAplusQuota\ServerUrl`。地址不得含路径、查询参数、片段或URL登录信息。
 - 显示方式保存在同目录的 `DisplayMode` 数值中，便于下次启动继续沿用；该选项不含账号或密钥。
+- 可选贴边收纳的开关保存在同一注册表位置的 `EdgeAutoHide` 中；不含账号、密钥或窗口活动记录。拖动位置仅在当前运行期间保留。
 - API Key通过HTTPS请求的Authorization Bearer头发送给所配置的服务。保持系统证书验证，禁止跨站重定向；切换服务时不会自动使用上一站点的密钥。
 - 密钥只存于当前Windows用户凭据管理器的 `CPAplus/QuotaTray/<HTTPS站点>` 中。同一Windows账户权限下的其他程序仍可能访问该账户凭据，请保护本机账户。
 - 账号备注按站点保存在 `%LOCALAPPDATA%\CPAplusQuota` 下，默认端口与已有同站点备注兼容，非默认端口独立隔离。备注可能包含用户主动填写的信息，不应公开。

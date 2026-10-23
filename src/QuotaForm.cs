@@ -18,6 +18,7 @@ internal sealed class QuotaForm : Form
     internal event EventHandler RefreshRequested,ConfigureRequested,PinRequested,ExitRequested,NotesChanged;
     internal event Action<int> ModeRequested;
     internal event Action<string> AccountSelected;
+    internal event Action<string> PreferAccountRequested;
     internal event Action<string> KeySaveRequested;
     internal event EventHandler PopupCreated;
     internal event Action<bool> StartupRequested;
@@ -35,18 +36,20 @@ internal sealed class QuotaForm : Form
         popup.NotesChanged+=delegate {if(NotesChanged!=null)NotesChanged(this,EventArgs.Empty);};
         popup.ModeRequested+=delegate(int value){if(ModeRequested!=null)ModeRequested(value);};
         popup.AccountSelected+=delegate(string alias){if(AccountSelected!=null)AccountSelected(alias);};
+        popup.PreferAccountRequested+=delegate(string alias){if(PreferAccountRequested!=null)PreferAccountRequested(alias);};
         popup.KeySaveRequested+=delegate(string value){if(KeySaveRequested!=null)KeySaveRequested(value);};
         popup.StartupRequested+=delegate(bool value){if(StartupRequested!=null)StartupRequested(value);};
         if(PopupCreated!=null)PopupCreated(this,EventArgs.Empty);
         if(status!=null)popup.SetStatus(status,statusError);
     }
     internal void ShowPopup(){EnsurePopup();popup.ShowPopup();}
+    internal void TogglePopup(){EnsurePopup();popup.TogglePopup();}
     internal void SetPinned(bool value){if(popup!=null)popup.SetPinned(value);}
     internal void SetStatus(string text,bool error){status=text;statusError=error;if(popup!=null)popup.SetStatus(text,error);}
     internal void SetReadFeedback(string text){if(popup!=null)popup.SetReadFeedback(text);}
     internal void SetBusy(bool value){if(popup!=null)popup.SetBusy(value);}
     internal void ClearAccounts(){status=null;if(popup!=null)popup.ClearData();}
-    internal void ShowAccounts(QuotaResult data,string primaryAlias){status=null;if(popup!=null){popup.SetData(data);popup.SetPrimary(primaryAlias);}}
+    internal void ShowAccounts(QuotaResult data,string primaryAlias){status=null;if(popup!=null)popup.SetAccounts(data,primaryAlias);}
     internal void SetPrimaryAlias(string alias){if(popup!=null)popup.SetPrimary(alias);}
     internal void SetDisplayMode(int value){if(popup!=null)popup.SetMode(value);}
     internal void SetKeyLabel(string key){if(popup!=null)popup.SetKeyLabel(key);}

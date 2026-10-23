@@ -24,17 +24,20 @@ internal sealed class QuotaPopup : Window
     [DllImport("dwmapi.dll")] private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd,ref Margins value);
     private readonly System.Windows.Controls.Border root;
     private readonly bool light;
+    private readonly PopupEdgeDock edgeDock;
     private readonly HashSet<string> expanded=new HashSet<string>();
     private QuotaResult data;
-    private string selected;
+    private string selected,noteAlias;
     // WM_SIZE can update Height's base value mid-animation; retain the content target.
     private double desiredHeight=double.NaN;
-    private bool resizing,resizeQueued;
+    private bool resizing,resizeQueued,userPositioned;
     private int resizeBottom;
     private bool closing,editingKey,paused;
+    private bool busy;
     internal event EventHandler RefreshRequested,ConfigureRequested,PinRequested,NotesChanged;
     internal event Action<int> ModeRequested;
     internal event Action<string> AccountSelected;
+    internal event Action<string> PreferAccountRequested;
     internal event Action<string> KeySaveRequested;
     internal event Action<bool> StartupRequested;
 
@@ -49,9 +52,14 @@ internal sealed class QuotaPopup : Window
         string[] colors=light?new[]{"#242A31","#626B76","#88FFFFFF","#40FFFFFF","#B0FAFBFC","#1477808C","#1877808C","#236847","#8A5C10"}:new[]{"#EEF1F5","#ADB7C3","#552F3540","#28FFFFFF","#30202731","#20FFFFFF","#28FFFFFF","#8BCDAB","#D8BB7A"};
         for(int i=0;i<keys.Length;i++)Resources[keys[i]]=Brush(colors[i]);
         Resources["MenuSurface"]=Brush(light?"#F5F7FA":"#2D333C");
+        Resources["RowSurface"]=Brush(light?"#B8FFFFFF":"#662F3540");
+        Resources["RowStroke"]=Brush(light?"#1477808C":"#18FFFFFF");
         using(var stream=GetType().Assembly.GetManifestResourceStream("QuotaPopup.xaml"))root=(System.Windows.Controls.Border)XamlReader.Load(stream);
         root.VerticalAlignment=VerticalAlignment.Top;
         Content=new ScrollViewer {Content=root,VerticalScrollBarVisibility=ScrollBarVisibility.Hidden,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Focusable=false};
+        edgeDock=new PopupEdgeDock(this,delegate {return busy||editingKey||IsMouseCaptureWithin||B<StackPanel>("SettingsPage").Visibility==Visibility.Visible;},delegate {return B<CheckBox>("PinSetting").IsChecked==true;},Resource("Accent"));
+        B<CheckBox>("EdgeSetting").IsChecked=edgeDock.Enabled;
+        B<CheckBox>("EdgeSetting").Click+=delegate {edgeDock.SetEnabled(B<CheckBox>("EdgeSetting").IsChecked==true);};
         root.SizeChanged+=delegate(object sender,SizeChangedEventArgs e){
             if(!e.HeightChanged||resizeQueued)return;
             resizeQueued=true;
@@ -63,10 +71,13 @@ internal sealed class QuotaPopup : Window
         B<Button>("CloseButton").Click+=delegate {Hide();};
         B<Button>("SettingsButton").Click+=delegate {Settings(true);};
         B<Button>("ConnectButton").Click+=delegate {Settings(true);};
-        B<Button>("BackButton").Click+=delegate {Settings(editingKey);};
+        B<Button>("BackButton").Click+=delegate {NavigateBack();};
         B<Button>("RefreshButton").Click+=delegate {if(RefreshRequested!=null)RefreshRequested(this,EventArgs.Empty);};
         B<Button>("ChangeKeyButton").Click+=delegate {if(ConfigureRequested!=null)ConfigureRequested(this,EventArgs.Empty);};
         B<Button>("SaveNoteButton").Click+=delegate {SaveNote();};
+        B<TextBox>("NoteInput").KeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Enter){SaveNote();e.Handled=true;}};
+        B<Button>("UsePrimaryButton").Click+=delegate {if(MainAccount!=null&&PreferAccountRequested!=null)PreferAccountRequested(MainAccount.alias);};
+        B<Button>("AutoRouteButton").Click+=delegate {if(PreferAccountRequested!=null)PreferAccountRequested(null);};
         B<Button>("CancelKeyButton").Click+=delegate {Settings(true);};
         B<Button>("SaveKeyButton").Click+=delegate {SaveKey();};
         B<PasswordBox>("KeyInput").PasswordChanged+=delegate {B<TextBlock>("KeyError").Visibility=Visibility.Collapsed;};
@@ -77,16 +88,25 @@ internal sealed class QuotaPopup : Window
         B<ComboBox>("DisplayMode").SelectedIndex=0;
         B<ComboBox>("DisplayMode").SelectionChanged+=delegate {if(ModeRequested!=null)ModeRequested(B<ComboBox>("DisplayMode").SelectedIndex);};
         B<TextBlock>("ServerAddress").Text=string.IsNullOrEmpty(QuotaApi.BaseUrl)?"尚未配置":QuotaApi.BaseUrl;
-        B<TextBlock>("Heading").MouseLeftButtonDown+=delegate(object sender,MouseButtonEventArgs e){if(e.LeftButton==MouseButtonState.Pressed)DragMove();};
+        PreviewMouseLeftButtonDown+=delegate(object sender,MouseButtonEventArgs e){
+            if(e.LeftButton==MouseButtonState.Pressed&&CanDragFrom(e.OriginalSource as DependencyObject)){e.Handled=true;DragMove();}
+        };
         SourceInitialized+=delegate {ApplyMaterial();};
         SizeChanged+=delegate {if(IsVisible&&!Topmost&&!resizing)PositionPopup();};
-        PreviewKeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Escape){if(editingKey)Settings(true);else Hide();e.Handled=true;}};
+        PreviewKeyDown+=delegate(object sender,KeyEventArgs e){if(e.Key==Key.Escape){var mode=B<ComboBox>("DisplayMode");if(mode.IsDropDownOpen)mode.IsDropDownOpen=false;else NavigateBack();e.Handled=true;}};
         IsVisibleChanged+=delegate {if(!IsVisible){resizing=false;if(!double.IsNaN(desiredHeight))Height=desiredHeight;BeginAnimation(HeightProperty,null);ClearKeyDraft();}};
         Closing+=delegate(object sender,System.ComponentModel.CancelEventArgs e){if(!closing){e.Cancel=true;Hide();}};
         System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(this);
         Render();
     }
     private T B<T>(string name) where T:FrameworkElement {return (T)root.FindName(name);}
+    private bool CanDragFrom(DependencyObject source)
+    {
+        for(var item=source;item!=null&&item!=this;item=item is Visual?VisualTreeHelper.GetParent(item):LogicalTreeHelper.GetParent(item)){
+            if(item is System.Windows.Controls.Primitives.ButtonBase||item is System.Windows.Controls.Primitives.TextBoxBase||item is PasswordBox||item is ComboBox||item is Expander||item is System.Windows.Controls.Primitives.ScrollBar||item is System.Windows.Controls.Primitives.Thumb)return false;
+        }
+        return source!=null;
+    }
     private static SolidColorBrush Brush(string value){return (SolidColorBrush)new BrushConverter().ConvertFromInvariantString(value);}
     private Brush Resource(string name){return (Brush)Resources[name];}
     private QuotaAccount MainAccount {get{return data==null?null:data.accounts.FirstOrDefault(a=>a.alias==selected)??data.accounts.FirstOrDefault();}}
@@ -107,8 +127,19 @@ internal sealed class QuotaPopup : Window
     }
     private IntPtr KeepResizeAnchor(IntPtr window,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
     {
+        // Only an interactive move changes placement mode; programmatic layout does not.
+        if(message==0x231){userPositioned=true;edgeDock.BeginMove();} // WM_ENTERSIZEMOVE
+        if(message==0x232)edgeDock.EndMove(); // WM_EXITSIZEMOVE
+        if(message==0x46&&edgeDock.Docked){
+            var position=(WindowPosition)Marshal.PtrToStructure(lParam,typeof(WindowPosition));WindowRect current;
+            if((position.flags&1)==0&&GetWindowRect(window,out current)){
+                if((position.flags&2)!=0){position.x=current.left;position.y=current.top;}
+                int top=edgeDock.ClampTop(position.y,position.height);
+                if(top!=position.y){position.y=top;position.flags&=~2u;Marshal.StructureToPtr(position,lParam,false);}
+            }
+        }
         // Apply height and bottom anchoring in the same native operation, before painting.
-        if(message==0x46&&resizing&&!Topmost){
+        if(message==0x46&&resizing&&!Topmost&&!userPositioned){
             var position=(WindowPosition)Marshal.PtrToStructure(lParam,typeof(WindowPosition));
             WindowRect current;
             if((position.flags&1)==0&&GetWindowRect(window,out current)){
@@ -120,16 +151,36 @@ internal sealed class QuotaPopup : Window
     }
     internal void ShowPopup()
     {
-        if(!IsVisible){Settings(false);root.Measure(new Size(Width,double.PositiveInfinity));ResizePopup(root.DesiredSize.Height);Show();PositionPopup();}
-        Activate();WriteEvidence();
+        edgeDock.PrepareShow();
+        if(!IsVisible){
+            var handle=new WindowInteropHelper(this).EnsureHandle();
+            var scale=HwndSource.FromHwnd(handle).CompositionTarget.TransformToDevice;
+            VisualTreeHelper.SetRootDpi(this,new DpiScale(scale.M11,scale.M22));
+            Settings(false);PositionPopup();
+            root.Measure(new Size(Width,double.PositiveInfinity));
+            root.Arrange(new Rect(0,0,Width,root.DesiredSize.Height));root.UpdateLayout();
+            ResizePopup(root.DesiredSize.Height);
+            PositionPopup();Show();
+        }
+        edgeDock.Shown();if(ShowActivated)Activate();WriteEvidence();
+    }
+    internal void TogglePopup(){if(IsVisible&&B<StackPanel>("HomePage").Visibility==Visibility.Visible)Hide();else ShowPopup();}
+    private void NavigateBack()
+    {
+        if(editingKey)Settings(true);
+        else if(B<StackPanel>("SettingsPage").Visibility==Visibility.Visible)Settings(false);
+        else Hide();
     }
     private void PositionPopup()
     {
-        var area=System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
-        var source=PresentationSource.FromVisual(this);double scale=source==null?1:source.CompositionTarget.TransformFromDevice.M11;
-        MaxHeight=area.Height*scale-24;
+        var area=(userPositioned?System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle):System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position)).WorkingArea;
+        var source=HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);var scale=source==null?Matrix.Identity:source.CompositionTarget.TransformFromDevice;
+        MaxHeight=area.Height*scale.M22-24;
         B<ScrollViewer>("OtherScroll").MaxHeight=Math.Max(90,Math.Min(235,MaxHeight-370));
-        Left=area.Right*scale-ActualWidth-12;Top=area.Bottom*scale-ActualHeight-12;
+        double left=area.Left*scale.M11+12,top=area.Top*scale.M22+12;
+        double right=Math.Max(left,area.Right*scale.M11-Width-12),bottom=Math.Max(top,area.Bottom*scale.M22-Math.Min(Height,MaxHeight)-12);
+        Left=userPositioned?Math.Max(left,Math.Min(Left,right)):right;
+        Top=userPositioned?Math.Max(top,Math.Min(Top,bottom)):bottom;
     }
     private void ResizePopup(double contentHeight)
     {
@@ -144,9 +195,10 @@ internal sealed class QuotaPopup : Window
         }else {Height=target;BeginAnimation(HeightProperty,null);}
     }
     internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Visibility=Visibility.Hidden;Render();}
-    internal void SetPrimary(string alias){selected=alias;Render();}
-    internal void ClearData(){data=null;selected=null;expanded.Clear();B<Expander>("OtherAccounts").IsExpanded=false;Render();}
-    internal void SetPinned(bool value){Topmost=value;B<CheckBox>("PinSetting").IsChecked=value;}
+    internal void SetAccounts(QuotaResult next,string alias){selected=alias;SetData(next);}
+    internal void SetPrimary(string alias){if(selected==alias)return;selected=alias;Render();}
+    internal void ClearData(){data=null;selected=null;noteAlias=null;expanded.Clear();B<Expander>("OtherAccounts").IsExpanded=false;Render();}
+    internal void SetPinned(bool value){Topmost=value||edgeDock.Docked;B<CheckBox>("PinSetting").IsChecked=value;}
     internal void SetStartup(bool value){B<CheckBox>("StartupSetting").IsChecked=value;}
     internal void SetPaused(bool value){paused=value;Render();}
     internal void SetMode(int value){if(value>=0&&value<5)B<ComboBox>("DisplayMode").SelectedIndex=value;}
@@ -177,11 +229,19 @@ internal sealed class QuotaPopup : Window
         B<TextBlock>("FailureText").Text=text;
         B<TextBlock>("FailureText").Foreground=Resource("Muted");
         B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?Visibility.Hidden:Visibility.Visible;
+        if(B<StackPanel>("SettingsPage").Visibility==Visibility.Visible)B<TextBlock>("SettingsNotice").Text=text;
     }
-    internal void SetBusy(bool busy){B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"查询中…":"刷新";}
+    internal void SetBusy(bool value){busy=value;B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"查询中…":"刷新";RenderOthers();RenderRouting();}
+    private void RenderRouting()
+    {
+        bool supported=data!=null&&data.selection!=null;
+        B<WrapPanel>("RoutingActions").Visibility=supported?Visibility.Visible:Visibility.Collapsed;
+        B<Button>("UsePrimaryButton").IsEnabled=!busy&&supported&&AccountPresentation.Usable(MainAccount);
+        B<Button>("AutoRouteButton").IsEnabled=!busy&&supported&&data.selection.mode=="manual";
+    }
     internal void SetStatus(string text,bool error)
     {
-        if(error){B<TextBlock>("FailureText").Foreground=Resource("Warning");B<TextBlock>("FailureText").Text=text;B<TextBlock>("FailureText").Visibility=Visibility.Visible;}
+        if(error){B<TextBlock>("FailureText").Foreground=Resource("Warning");B<TextBlock>("FailureText").Text=text;B<TextBlock>("FailureText").Visibility=Visibility.Visible;if(B<StackPanel>("SettingsPage").Visibility==Visibility.Visible)B<TextBlock>("SettingsNotice").Text=text;}
         else B<TextBlock>("SettingsNotice").Text=text;
     }
     private void Render()
@@ -197,11 +257,22 @@ internal sealed class QuotaPopup : Window
         B<TextBlock>("UnavailableHint").Text=!empty&&!a.supported?"此账号暂不支持额度查询":"上方为最近记录，账号当前不参与调用。";
         B<TextBlock>("UpdatedText").Text=empty?(paused?"Codex 启动后自动更新":"尚未连接"):AccountPresentation.Updated(a.lastSuccessAt);
         string cache=empty?"":AccountPresentation.CacheState(a);
+        bool warning=cache.Length>0;
+        if(!empty&&cache.Length==0&&data.selection!=null){
+            var preferred=data.accounts.FirstOrDefault(account=>account.alias==data.selection.alias);
+            cache=data.selection.mode=="manual"&&preferred!=null?"优先调用："+AccountNames.Label(preferred):"调用：按优先级自动排序";
+        }
         B<TextBlock>("CacheNote").Text=cache;B<TextBlock>("CacheNote").Visibility=cache.Length==0?Visibility.Hidden:Visibility.Visible;
-        B<TextBlock>("CacheNote").Foreground=Resource("Warning");
+        B<TextBlock>("CacheNote").Foreground=Resource(warning?"Warning":"Muted");
         B<Button>("ConnectButton").Visibility=empty?Visibility.Visible:Visibility.Collapsed;
-        if(!empty){Metric("Five",a,a.fiveHour);Metric("Week",a,a.weekly);}
+        B<Button>("SaveNoteButton").IsEnabled=data!=null&&data.accounts.Any(account=>account.alias==noteAlias);
+        if(!empty){
+            B<StackPanel>("FiveMetric").Visibility=a.fiveHour==null?Visibility.Collapsed:Visibility.Visible;
+            B<Grid>("Metrics").RowDefinitions[1].Height=new GridLength(a.fiveHour==null?0:19);
+            Metric("Five",a,a.fiveHour);Metric("Week",a,a.weekly);
+        }
         RenderOthers();
+        RenderRouting();
     }
     private void Metric(string prefix,QuotaAccount a,QuotaWindow w)
     {
@@ -215,35 +286,58 @@ internal sealed class QuotaPopup : Window
     }
     private void RenderOthers()
     {
-        var main=MainAccount;var list=B<StackPanel>("AccountRows");list.Children.Clear();
+        var main=MainAccount;var list=B<StackPanel>("AccountRows");
         var others=data==null?new List<QuotaAccount>():data.accounts.Where(a=>main==null||a.alias!=main.alias).ToList();
         B<Expander>("OtherAccounts").Header="还有 "+others.Count+" 个账号";
         B<Expander>("OtherAccounts").Visibility=others.Count==0?Visibility.Collapsed:Visibility.Visible;
+        foreach(var removed in list.Children.OfType<Expander>().Where(row=>!others.Any(a=>a.alias==(string)row.Tag)).ToList())list.Children.Remove(removed);
+        expanded.RemoveWhere(alias=>data==null||!data.accounts.Any(a=>a.alias==alias));
+        int index=0;
         foreach(var a in others){
-            var header=new Grid {Width=285};header.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});header.ColumnDefinitions.Add(new ColumnDefinition {Width=GridLength.Auto});
-            var name=Text(AccountNames.Label(a),12,false);name.MaxWidth=105;name.HorizontalAlignment=HorizontalAlignment.Left;
-            var summary=Text(AccountPresentation.Summary(a),11,true);Grid.SetColumn(summary,1);header.Children.Add(name);header.Children.Add(summary);
-            var details=new StackPanel {Margin=new Thickness(20,9,0,5)};
-            if(a.supported){details.Children.Add(Text("五小时 "+AccountPresentation.Percent(a.fiveHour)+"    周 "+AccountPresentation.Percent(a.weekly),13,!AccountPresentation.Usable(a)));
-                details.Children.Add(Text(AccountPresentation.Reset(a.fiveHour==null?null:a.fiveHour.resetAt),11,true));details.Children.Add(Text("周额度 "+AccountPresentation.Reset(a.weekly==null?null:a.weekly.resetAt),11,true));}
+            var row=list.Children.OfType<Expander>().FirstOrDefault(item=>(string)item.Tag==a.alias);
+            if(row==null){
+                var heading=new Grid();heading.ColumnDefinitions.Add(new ColumnDefinition {Width=new GridLength(1,GridUnitType.Star)});heading.ColumnDefinitions.Add(new ColumnDefinition {Width=GridLength.Auto});
+                var label=Text("",12,false);label.Margin=new Thickness(2,0,10,0);
+                var compact=Text("",11,true);compact.MaxWidth=124;compact.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(compact,1);heading.Children.Add(label);heading.Children.Add(compact);
+                var body=new StackPanel {Margin=new Thickness(10,3,10,10)};
+                body.Children.Add(new System.Windows.Controls.Border {Height=1,Background=Resource("RowStroke"),Margin=new Thickness(0,0,0,5)});
+                var action=new Button {HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-9,0,0,7)};
+                string alias=a.alias;action.Click+=delegate {
+                    if(busy||data==null)return;
+                    var current=data.accounts.FirstOrDefault(account=>account.alias==alias);if(current==null)return;
+                    if(data.selection!=null&&AccountPresentation.Usable(current)){if(PreferAccountRequested!=null){action.Content="切换中…";PreferAccountRequested(alias);}}
+                    else if(AccountSelected!=null)AccountSelected(alias);
+                };body.Children.Add(action);
+                foreach(string name in new[]{"Quota","FiveReset","WeekReset","State","Updated"}){var line=Text("",name=="Quota"?13:11,name!="Quota");line.Name=name;body.Children.Add(line);}
+                row=new Expander {Tag=alias,Header=heading,Content=body,FontSize=12,IsExpanded=expanded.Contains(alias),Margin=new Thickness(0,0,0,7),Padding=new Thickness(7,2,7,2),Background=Resource("RowSurface"),BorderBrush=Resource("RowStroke"),BorderThickness=new Thickness(1),HorizontalContentAlignment=HorizontalAlignment.Stretch};
+                row.Expanded+=delegate {expanded.Add(alias);};row.Collapsed+=delegate {expanded.Remove(alias);};list.Children.Insert(index,row);
+            }else if(list.Children.IndexOf(row)!=index){list.Children.Remove(row);list.Children.Insert(index,row);}
+            index++;
+            var header=(Grid)row.Header;var nameText=(TextBlock)header.Children[0];var summary=(TextBlock)header.Children[1];
+            nameText.Text=AccountNames.Label(a);nameText.ToolTip=nameText.Text;summary.Text=AccountPresentation.Summary(a);summary.ToolTip=summary.Text;
+            var details=(StackPanel)row.Content;var choose=details.Children.OfType<Button>().Single();choose.IsEnabled=!busy;
+            if(!busy||!object.Equals(choose.Content,"切换中…"))choose.Content=data.selection!=null&&AccountPresentation.Usable(a)?"优先使用并主显示":"设为主显示";
+            SetRowLine(details,"Quota",a.supported?string.Join(" · ",AccountPresentation.QuotaParts(a,false)):null).Foreground=Resource(AccountPresentation.Usable(a)?"Ink":"Muted");
+            SetRowLine(details,"FiveReset",a.supported&&a.fiveHour!=null?"五小时 "+AccountPresentation.Reset(a.fiveHour.resetAt):null);
+            SetRowLine(details,"WeekReset",a.supported&&a.weekly!=null?"周额度 "+AccountPresentation.Reset(a.weekly.resetAt):null);
             string status=AccountPresentation.State(a),cached=AccountPresentation.CacheState(a);
-            details.Children.Add(Text(status+(cached.Length>0?" · "+cached:""),11,true));details.Children.Add(Text(AccountPresentation.Updated(a.lastSuccessAt),11,true));
-            var choose=new Button {Content="设为主显示",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-9,6,0,0)};
-            string alias=a.alias;choose.Click+=delegate {if(AccountSelected!=null)AccountSelected(alias);B<Expander>("OtherAccounts").IsExpanded=false;};details.Children.Add(choose);
-            var row=new Expander {Header=header,Content=details,FontSize=12,IsExpanded=expanded.Contains(a.alias),Margin=new Thickness(0,0,0,10),HorizontalContentAlignment=HorizontalAlignment.Stretch};
-            row.Expanded+=delegate {expanded.Add(alias);};row.Collapsed+=delegate {expanded.Remove(alias);};list.Children.Add(row);
+            SetRowLine(details,"State",status+(cached.Length>0?" · "+cached:""));SetRowLine(details,"Updated",AccountPresentation.Updated(a.lastSuccessAt));
         }
+    }
+    private TextBlock SetRowLine(StackPanel details,string name,string value)
+    {
+        var line=details.Children.OfType<TextBlock>().Single(item=>item.Name==name);line.Text=value;line.Visibility=value==null?Visibility.Collapsed:Visibility.Visible;return line;
     }
     private void Settings(bool show)
     {
         ClearKeyDraft();editingKey=false;B<StackPanel>("KeyPage").Visibility=Visibility.Collapsed;
         B<StackPanel>("HomePage").Visibility=show?Visibility.Collapsed:Visibility.Visible;B<StackPanel>("SettingsPage").Visibility=show?Visibility.Visible:Visibility.Collapsed;
         B<Button>("BackButton").Visibility=show?Visibility.Visible:Visibility.Collapsed;B<Button>("SettingsButton").Visibility=show?Visibility.Collapsed:Visibility.Visible;B<TextBlock>("Heading").Text=show?"设置":"Codex 额度";
-        if(show){var a=MainAccount;B<TextBox>("NoteInput").Text=a==null?"":AccountNames.Note(a.alias)??"";B<TextBlock>("RawAlias").Text=a==null?"尚无账号":AccountNames.Label(a);B<Button>("SaveNoteButton").IsEnabled=a!=null;B<TextBlock>("SettingsNotice").Text="备注仅保存在这台电脑。";}
+        if(show){var a=MainAccount;noteAlias=a==null?null:a.alias;B<TextBox>("NoteInput").Text=a==null?"":AccountNames.Note(a.alias)??"";B<TextBlock>("RawAlias").Text=a==null?"尚无账号":AccountNames.Label(a);B<Button>("SaveNoteButton").IsEnabled=a!=null;B<TextBlock>("SettingsNotice").Text="备注仅保存在这台电脑。";}
     }
     private void SaveNote()
     {
-        var a=MainAccount;if(a==null)return;
+        var a=data==null?null:data.accounts.FirstOrDefault(account=>account.alias==noteAlias);if(a==null)return;
         try {AccountNames.Save(a.alias,B<TextBox>("NoteInput").Text);B<TextBlock>("SettingsNotice").Text="备注已保存";Render();if(NotesChanged!=null)NotesChanged(this,EventArgs.Empty);}
         catch(IOException){B<TextBlock>("SettingsNotice").Text="备注未能保存，请稍后重试。";}
         catch(UnauthorizedAccessException){B<TextBlock>("SettingsNotice").Text="无法保存本地备注。";}
@@ -254,5 +348,5 @@ internal sealed class QuotaPopup : Window
         var a=MainAccount;
         File.WriteAllText(Path.Combine(DesktopMonitor.EvidenceDirectory,"ui-state.json"),new JavaScriptSerializer().Serialize(new{title=Title,width=ActualWidth,height=ActualHeight,backdropHresult=hr,backdrop=backdrop,mainAccount=a==null?null:AccountNames.Label(a),otherAccountsExpanded=B<Expander>("OtherAccounts").IsExpanded,visible=IsVisible}));
     }
-    internal void Shutdown(){if(closing)return;closing=true;Close();}
+    internal void Shutdown(){if(closing)return;closing=true;edgeDock.Dispose();Close();}
 }

@@ -67,11 +67,12 @@ internal sealed class TaskbarStrip : Form
         selected=a.alias;
         if(previous!=selected&&AccountSelected!=null)AccountSelected(selected);
         var text=new StringBuilder(AccountNames.Label(a)+"\n");
+        if(!string.IsNullOrEmpty(failure))text.Append(failure+" · 显示上次结果\n");
         text.Append(a.frozen?"已冻结":a.disabled?"已停用":a.available?"可用":"当前不可用");
         if(a.stale)text.Append(" · 额度信息已过期");
         if(a.cacheStatus=="error")text.Append(" · 最近查询失败");
-        text.Append("\n五小时重置 "+Theme.Time(a.fiveHour==null?null:a.fiveHour.resetAt));
-        text.Append("\n周额度重置 "+Theme.Time(a.weekly==null?null:a.weekly.resetAt));
+        if(a.fiveHour!=null)text.Append("\n五小时重置 "+Theme.Time(a.fiveHour.resetAt));
+        if(a.weekly!=null)text.Append("\n周额度重置 "+Theme.Time(a.weekly.resetAt));
         text.Append("\n最近成功 "+Theme.Time(a.lastSuccessAt)+"\n点击查看全部绑定账号；滚轮切换显示账号。");
         text.Append("\n颜色：高于50%绿，高于20%至50%黄，20%及以下红；小圆点表示状态需注意。");
         tooltip.SetToolTip(this,text.ToString());lastText=null;
@@ -88,12 +89,17 @@ internal sealed class TaskbarStrip : Form
         selected=alias;UpdateData(data,error);if(AccountSelected!=null)AccountSelected(alias);
     }
     internal void RefreshNames(){UpdateData(data,error);}
+    internal void SelectDefaultAccount()
+    {
+        if(data==null)return;
+        var next=data.accounts.FirstOrDefault(a=>a.supported&&AccountPresentation.Usable(a))??data.accounts.FirstOrDefault();
+        if(next!=null&&next.alias!=selected)SelectAccount(next.alias);
+    }
     private QuotaAccount Account()
     {
         if(data==null)return null;
         return data.accounts.FirstOrDefault(a=>a.alias==selected)??data.accounts.FirstOrDefault(a=>a.supported&&a.available&&!a.stale)??data.accounts.FirstOrDefault(a=>a.supported&&a.available)??data.accounts.FirstOrDefault();
     }
-    private static string Percent(QuotaWindow w){return w==null||!w.remainingPercent.HasValue?"—":w.remainingPercent.Value.ToString("0")+"%";}
     // Fixed prototype defaults; no flashing or animated warning colors.
     internal static Color QuotaColor(double? remaining,bool light)
     {
@@ -114,14 +120,15 @@ internal sealed class TaskbarStrip : Form
     internal bool Present(Rectangle bar,int freeLeft,int trayLeft,int dpi)
     {
         bool wasVisible=Visible;
-        var a=Account();string text=a==null?(error??"额度不可用"):!a.supported?"额度不支持":"5h "+Percent(a.fiveHour)+" · 周 "+Percent(a.weekly);
+        var a=Account();string text=a==null?(error??"额度不可用"):!a.supported?"额度不支持":string.Join(" · ",AccountPresentation.QuotaParts(a,false));
+        bool compact=false;
         float scale=dpi/96f;
         using(var font=new Font(UiFonts.Taskbar,12*scale,FontStyle.Regular,GraphicsUnit.Pixel))
         using(var measure=new Bitmap(1,1))using(var graphics=Graphics.FromImage(measure))
         {
             int width=(int)Math.Ceiling(graphics.MeasureString(text,font).Width)+Math.Max(8,(int)(14*scale));
             Rectangle bounds=Place(bar,freeLeft,trayLeft,width,dpi);
-            if(bounds.IsEmpty&&a!=null&&a.supported){text="5h"+Percent(a.fiveHour)+" 周"+Percent(a.weekly);width=(int)Math.Ceiling(graphics.MeasureString(text,font).Width)+(int)(14*scale);bounds=Place(bar,freeLeft,trayLeft,width,dpi);}
+            if(bounds.IsEmpty&&a!=null&&a.supported){compact=true;text=string.Join(" ",AccountPresentation.QuotaParts(a,true));width=(int)Math.Ceiling(graphics.MeasureString(text,font).Width)+(int)(14*scale);bounds=Place(bar,freeLeft,trayLeft,width,dpi);}
             if(bounds.IsEmpty){Hide();return false;}
             CurrentText=text;
             // Raise only our own independent window, without activation or ownership changes.
@@ -136,14 +143,15 @@ internal sealed class TaskbarStrip : Form
                 using(var format=new StringFormat(StringFormat.GenericTypographic)) {
                     format.FormatFlags|=StringFormatFlags.MeasureTrailingSpaces;
                     if(a!=null&&a.supported){
-                        bool compact=text.IndexOf(" · ",StringComparison.Ordinal)<0;
-                        string[] parts={"5h"+(compact?"":" ")+Percent(a.fiveHour),compact?" ":" · ","周"+(compact?"":" ")+Percent(a.weekly)};
+                        string[] quotas=AccountPresentation.QuotaParts(a,compact);
+                        string[] parts=quotas.Length==2?new[]{quotas[0],compact?" ":" · ",quotas[1]}:quotas;
                         float[] sizes=parts.Select(p=>drawing.MeasureString(p,font,int.MaxValue,format).Width).ToArray();float x=(bounds.Width-sizes.Sum())/2;
                         bool current=AccountPresentation.ColorQuota(a);
-                        Color[] colors={QuotaColor(current&&a.fiveHour!=null?a.fiveHour.remainingPercent:null,light),QuotaColor(null,light),QuotaColor(current&&a.weekly!=null?a.weekly.remainingPercent:null,light)};
+                        var first=a.fiveHour??a.weekly;
+                        Color[] colors=quotas.Length==2?new[]{QuotaColor(current&&first!=null?first.remainingPercent:null,light),QuotaColor(null,light),QuotaColor(current&&a.weekly!=null?a.weekly.remainingPercent:null,light)}:new[]{QuotaColor(current&&first!=null?first.remainingPercent:null,light)};
                         float y=(bounds.Height-font.GetHeight(drawing))/2;
                         for(int i=0;i<parts.Length;i++){using(var brush=new SolidBrush(colors[i]))drawing.DrawString(parts[i],font,brush,new PointF(x,y),format);x+=sizes[i];}
-                        if(a.stale||a.frozen||a.disabled||a.cacheStatus=="error")using(var dot=new SolidBrush(QuotaColor(40,light)))drawing.FillEllipse(dot,bounds.Width-4*scale,(bounds.Height-3*scale)/2,3*scale,3*scale);
+                        if(error!=null||a.stale||a.frozen||a.disabled||a.cacheStatus=="error")using(var dot=new SolidBrush(QuotaColor(40,light)))drawing.FillEllipse(dot,bounds.Width-4*scale,(bounds.Height-3*scale)/2,3*scale,3*scale);
                     }else using(var brush=new SolidBrush(QuotaColor(null,light))){format.Alignment=StringAlignment.Center;format.LineAlignment=StringAlignment.Center;drawing.DrawString(text,font,brush,new RectangleF(0,0,bounds.Width,bounds.Height),format);}
                 }
                 bool animate=AnimateChange(paintedText,text,paintedAlias,a==null?null:a.alias,wasVisible,a!=null&&AccountPresentation.ColorQuota(a),System.Windows.SystemParameters.ClientAreaAnimation);

@@ -14,15 +14,19 @@
     </Style>
     <Style TargetType="Expander">
       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander">
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9" Padding="{TemplateBinding Padding}">
         <StackPanel>
-          <ToggleButton x:Name="ExpanderHeader" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Foreground="{TemplateBinding Foreground}" Padding="1,8">
+          <ToggleButton x:Name="ExpanderHeader" Cursor="Hand" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Foreground="{TemplateBinding Foreground}" Padding="1,8">
             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
               <Border x:Name="HeaderBorder" Background="Transparent" CornerRadius="7" Padding="{TemplateBinding Padding}">
-                <DockPanel><TextBlock DockPanel.Dock="Right" x:Name="Chevron" Text="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="10" Margin="8,0,4,0" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/><ContentPresenter Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}" VerticalAlignment="Center"/></DockPanel>
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ContentPresenter Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}" HorizontalAlignment="Stretch" VerticalAlignment="Center"/><TextBlock Grid.Column="1" x:Name="Chevron" Text="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="10" Margin="10,0,4,0" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/></Grid>
               </Border>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                <Trigger Property="IsPressed" Value="True"><Setter TargetName="HeaderBorder" Property="Opacity" Value="0.7"/></Trigger>
                 <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="Text" Value="&#xE70E;"/></Trigger>
                 <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
               </ControlTemplate.Triggers>
@@ -30,6 +34,7 @@
           </ToggleButton>
           <ContentPresenter x:Name="ExpandedContent" ContentSource="Content" Visibility="Collapsed"/>
         </StackPanel>
+        </Border>
         <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="ExpandedContent" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
@@ -47,6 +52,7 @@
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.7"/></Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
           </ControlTemplate.Triggers>
@@ -120,11 +126,11 @@
         <StackPanel>
           <DockPanel>
             <Border x:Name="StateBadge" DockPanel.Dock="Right" CornerRadius="5" Padding="7,3" VerticalAlignment="Center"><TextBlock x:Name="AccountState" FontSize="12"/></Border>
-            <TextBlock x:Name="AccountName" FontSize="17" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            <TextBlock x:Name="AccountName" FontSize="17" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
           </DockPanel>
           <Grid x:Name="Metrics" Margin="0,19,0,0">
             <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="19"/><RowDefinition/></Grid.RowDefinitions>
-            <StackPanel>
+            <StackPanel x:Name="FiveMetric">
               <DockPanel><TextBlock x:Name="FiveValue" DockPanel.Dock="Right" FontSize="24" FontWeight="Medium"/><TextBlock Text="五小时" FontSize="13" VerticalAlignment="Center"/></DockPanel>
               <ProgressBar x:Name="FiveBar" Height="5" Maximum="100" BorderThickness="0" Margin="0,8,0,0"/>
               <TextBlock x:Name="FiveReset" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
@@ -139,14 +145,33 @@
         </StackPanel>
       </Border>
       <DockPanel Margin="2,10,0,10">
-        <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Width="76" Padding="8,5" AutomationProperties.Name="刷新"/>
+        <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Width="76" Padding="8,5" ToolTip="刷新当前主账号额度，查询期间可继续浏览或收起窗口" AutomationProperties.Name="刷新"/>
         <StackPanel VerticalAlignment="Center">
           <TextBlock x:Name="UpdatedText" FontSize="12" Foreground="{DynamicResource Muted}"/>
-          <TextBlock x:Name="CacheNote" FontSize="12" MinHeight="18" Margin="0,3,0,0"/>
+          <TextBlock x:Name="CacheNote" FontSize="12" MinHeight="18" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,3,0,0"/>
         </StackPanel>
       </DockPanel>
       <Expander x:Name="OtherAccounts" Foreground="{DynamicResource Muted}" FontSize="12" IsExpanded="False" BorderThickness="0">
-        <ScrollViewer x:Name="OtherScroll" MaxHeight="235" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,10,0,0">
+        <ScrollViewer x:Name="OtherScroll" MaxHeight="235" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" PanningMode="VerticalOnly" Margin="0,8,0,0" Padding="0,0,6,0">
+          <ScrollViewer.Template><ControlTemplate TargetType="ScrollViewer">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" CanContentScroll="{TemplateBinding CanContentScroll}" Margin="{TemplateBinding Padding}"/>
+              <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Width="6" Orientation="Vertical" Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}" Value="{Binding VerticalOffset, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+            </Grid>
+          </ControlTemplate></ScrollViewer.Template>
+          <ScrollViewer.Resources>
+            <Style TargetType="ScrollBar">
+              <Setter Property="Width" Value="6"/>
+              <Setter Property="MinWidth" Value="0"/>
+              <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+                <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}" Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                  <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+                  <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="ThumbFill" Background="{DynamicResource Muted}" Opacity="0.28" CornerRadius="3" Margin="1,0"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ThumbFill" Property="Opacity" Value="0.5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                  <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+                </Track>
+              </ControlTemplate></Setter.Value></Setter>
+            </Style>
+          </ScrollViewer.Resources>
           <StackPanel x:Name="AccountRows"/>
         </ScrollViewer>
       </Expander>
@@ -172,6 +197,10 @@
       </StackPanel>
     </StackPanel>
     <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
+      <WrapPanel x:Name="RoutingActions" Visibility="Collapsed" Margin="0,0,0,12">
+        <Button x:Name="UsePrimaryButton" Content="优先使用此账号"/>
+        <Button x:Name="AutoRouteButton" Content="恢复自动排序"/>
+      </WrapPanel>
       <TextBlock Text="账号备注" FontWeight="Medium" Margin="0,0,0,8"/>
       <TextBox x:Name="NoteInput" MaxLength="40" AutomationProperties.Name="本地账号备注"/>
       <DockPanel Margin="0,6,0,16">
@@ -181,6 +210,8 @@
       <TextBlock Text="显示方式" FontWeight="Medium" Margin="0,0,0,8"/>
       <ComboBox x:Name="DisplayMode" FontSize="12" Padding="8,5" AutomationProperties.Name="任务栏显示方式"/>
       <CheckBox x:Name="PinSetting" Content="详情窗口保持置顶" FontSize="12" Foreground="{DynamicResource Ink}" Margin="1,13,0,19"/>
+      <CheckBox x:Name="EdgeSetting" Content="贴边自动收纳" FontSize="12" Foreground="{DynamicResource Ink}" ToolTip="开启后，将标题拖到屏幕外侧的左边缘或右边缘。悬停展开，离开收起。" Margin="1,0,0,8"/>
+      <TextBlock Text="拖到左右外侧边缘启用，拖回即可取消。" FontSize="11" Foreground="{DynamicResource Muted}" Margin="23,0,0,16"/>
       <CheckBox x:Name="StartupSetting" Content="登录 Windows 后静默启动" FontSize="12" Foreground="{DynamicResource Ink}" Margin="1,0,0,19"/>
       <Border Height="1" Background="{DynamicResource Stroke}" Margin="0,0,0,16"/>
       <TextBlock Text="连接" FontWeight="Medium" Margin="0,0,0,8"/>
