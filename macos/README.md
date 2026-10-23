@@ -21,6 +21,8 @@
 
 下载入口为 [macOS Native Beta 工作流](https://github.com/WanDa249/CPAplus-Quota/actions/workflows/macos-beta.yml?query=branch%3Amacos%2Fnative-beta)中 0.1.2-beta 源码对应的成功运行。[构建、测试与校验记录](https://github.com/WanDa249/CPAplus-Quota/blob/macos/native-beta/macos/VALIDATION.md)记录经过核验的具体产物。最低部署目标 macOS 13；macOS 13/14 实际运行仍待测试。
 
+已核验：[下载 0.1.2-beta Universal 测试包](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39997430290/artifacts/12520107461)，[查看成功构建](https://github.com/WanDa249/CPAplus-Quota/actions/runs/39997430290)。Apple Silicon 与 Intel 各21项自动测试通过；实际桌面体验仍待验收。
+
 1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
 2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.2-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。
 3. 将 `CPAplusQuota.app` 移入“应用程序”，双击启动。系统可能因缺少 Developer ID 与公证阻止启动。仅在明确核实来源、遵守设备或单位政策的受控测试中，按 macOS“隐私与安全性”提供的单次打开流程处理。不要关闭 Gatekeeper、移除隔离属性或关闭系统安全功能。系统拒绝或提示损坏时先停止并反馈。
@@ -29,6 +31,8 @@
 正式分发需要维护者的 Apple Developer Program 账号、Developer ID Application 证书、安全保存的签名凭据、Hardened Runtime、Apple 公证与 staple 流程。当前不具备这些条件；CI 通过不能解决普通用户的 Gatekeeper 信任问题。
 
 未签名 Beta 换版后，ad-hoc 代码身份可能变化，Keychain 可能重新要求授权；这也属于实体 Mac 升级测试范围。
+
+从旧 Mac Beta 升级：先在旧版退出程序，再用新版同名 App 替换应用程序目录里的旧版，重新启动。服务地址、主显示账号、备注和 Keychain 服务标识均保持原样；不要先删除钥匙串或配置来升级。遇到系统授权提示或登录项异常请反馈，勿关闭系统安全功能。
 
 ## 日常操作
 

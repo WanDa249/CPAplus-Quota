@@ -22,6 +22,6 @@ Boundary remains Mac source and synthetic tests only; do not modify production, 
 ## Windows 0.1.2 parity — 2026-10-24
 
 9. Compare public Windows ee629f2 and local follow-up fixes with Mac — complete. Sync quota and interaction semantics; retain native anchored popover rather than porting Windows edge-dock geometry.
-10. Implement weekly-only display, foreground action priority, stable detail layout and account-bound note drafts — in progress.
-11. Add cancellation/race/error/note/weekly regressions; build and test on both macOS runners — pending.
-12. Inspect downloadable 0.1.2-beta Universal app, document evidence and remaining real-Mac acceptance — pending.
+10. Implement weekly-only display, foreground action priority, stable detail layout and account-bound note drafts — complete; compiled on both native architectures, view-size checks passed.
+11. Add cancellation/race/error/note/weekly regressions; build and test on both macOS runners — complete. First run 39996929418 failed two fixture waits; eef6055 passed 21 tests per CPU, Universal packaging/signature/plist and native launch in run 39997430290.
+12. Inspect downloadable 0.1.2-beta Universal app, document evidence and remaining real-Mac acceptance — complete. Both final artifacts/logs downloaded; version/build, executable bits, two CPU slices, bundled docs/license and SHA-256 verified. Recommended artifact 12520107461; SHA-256 67852299ed612bd83c7b305a00142f22327043a26314d403479843a8c3315f3f. Only docs updated after tested source; physical Mac acceptance and formal signing/notarization remain pending.
