@@ -18,3 +18,10 @@ Earlier billing blocker resolved by user. Successful run: https://github.com/Wan
 8. Verify HTTP/HTTPS behavior, state synchronization, no automatic PUT and error paths on both macOS runners; deliver new unsigned Universal Beta — complete; run 39411760648 is green, 15 XCTest cases per architecture. Recommended artifact 12259358288. Source 0a7fa8a.
 
 Boundary remains Mac source and synthetic tests only; do not modify production, Windows code or Releases.
+
+## Windows 0.1.2 parity — 2026-10-24
+
+9. Compare public Windows ee629f2 and local follow-up fixes with Mac — complete. Sync quota and interaction semantics; retain native anchored popover rather than porting Windows edge-dock geometry.
+10. Implement weekly-only display, foreground action priority, stable detail layout and account-bound note drafts — in progress.
+11. Add cancellation/race/error/note/weekly regressions; build and test on both macOS runners — pending.
+12. Inspect downloadable 0.1.2-beta Universal app, document evidence and remaining real-Mac acceptance — pending.

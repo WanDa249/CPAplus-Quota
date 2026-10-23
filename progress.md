@@ -1,5 +1,7 @@
 # Progress
 
+2026-10-24: new Windows parity iteration requested. Fetched public main ee629f2 and read v0.1.2 release plus local interaction/growth/return reports. Continuing only on macos/native-beta; Windows and production unchanged. Planned Mac 0.1.2-beta with active-operation priority, window-aware quota display, stable scrollable details and fixed-target note editing, then actual two-architecture CI and artifact inspection.
+
 2026-10-20: inspected repository, Windows API/presentation, reference licenses and native architecture. Original root is not a Git repository, so isolated clone at work/macos-quota-20261020. Existing public Windows v0.1.0-beta release ID 417938072 will not be changed.
 
 2026-10-20: native source, unit/HTTPS/Keychain tests, Universal packaging scripts and two-runner workflow committed/pushed. First actual run 39360788662 rejected both jobs before any step: account locked due to a billing issue. User notified with a consolidated request to resolve account billing. No compiler success or artifact claimed. Static grammar, YAML, plist, Bash and Python syntax checks passed locally. Local WSL Ubuntu-E could not mount its missing VHDX; it is not a substitute for macOS compilation. Further fixes include delegate class conformance, full 300-second backoff and locally detected reset expiration.

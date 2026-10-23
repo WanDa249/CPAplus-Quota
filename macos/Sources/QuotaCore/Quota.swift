@@ -51,7 +51,10 @@ public struct QuotaAccount: Decodable, Identifiable {
         if !usable { return "CPA · \(state)" }
         if supported != true { return "CPA · 不支持查询" }
         let warning = expired || cacheStatus == "error" ? " !" : ""
-        return "5h \(fiveHour?.percent ?? "—") · 周 \(weekly?.percent ?? "—")\(warning)"
+        var parts: [String] = []
+        if let fiveHour { parts.append("5h " + fiveHour.percent) }
+        if let weekly { parts.append("周 " + weekly.percent) }
+        return (parts.isEmpty ? "额度待更新" : parts.joined(separator: " · ")) + warning
     }
 }
 

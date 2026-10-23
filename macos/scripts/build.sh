@@ -20,5 +20,5 @@ codesign --verify --strict --verbose=2 "$app"
 lipo -archs "$app/Contents/MacOS/CPAplusQuota"
 file "$app/Contents/MacOS/CPAplusQuota"
 plutil -lint "$app/Contents/Info.plist"
-ditto -c -k --sequesterRsrc --keepParent "$app" dist/CPAplusQuota-0.1.1-beta-macos-universal-UNSIGNED.zip
-(cd dist && shasum -a 256 CPAplusQuota-0.1.1-beta-macos-universal-UNSIGNED.zip > SHA256SUMS.txt)
+ditto -c -k --sequesterRsrc --keepParent "$app" dist/CPAplusQuota-0.1.2-beta-macos-universal-UNSIGNED.zip
+(cd dist && shasum -a 256 CPAplusQuota-0.1.2-beta-macos-universal-UNSIGNED.zip > SHA256SUMS.txt)

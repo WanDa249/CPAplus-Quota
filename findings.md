@@ -1,5 +1,7 @@
 # Findings
 
+- 2026-10-24: Windows public main ee629f2 / v0.1.2 adds present-window-only quota summaries, active requests preempting passive GET, retained context/data on failure, explicit routing, and Windows drag/snap/docking. Local popup-growth/return candidates fix manual-position restoration and per-monitor DPI; no new API contract. Mac already retains cache on network failure and has account-pool routing, but busy GET currently blocks user actions, note draft follows background selection, and absent windows render placeholders. Native NSPopover remains anchored by AppKit; use bounded scrollable content instead of importing Windows window geometry.
+
 - Windows source: src/QuotaApi.cs, AccountPresentation.cs, ServiceEndpoint.cs. HTTPS origin only; Bearer key; X-Quota-Account strips `账号 ` prefix. GET reads cache, POST optional; 404/405 fallback to GET. lastSuccessAt is upstream success, not client fetch time.
 - Both reference repositories inspected at local shallow clones; MIT (HemSoft 2026; Jack Chen/wjx8 2026). No source copied. HemSoft uses MenuBarExtra with complex multiprovider/Sparkle stack; wjx8 uses NSWorkspace plus name/path fallbacks, which this implementation will avoid.
 - AppKit NSStatusItem chosen for explicit visibility and bounded text; SwiftUI for popover/settings. macOS 13 minimum for SMAppService.

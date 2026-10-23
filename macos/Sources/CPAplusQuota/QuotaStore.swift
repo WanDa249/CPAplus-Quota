@@ -5,9 +5,10 @@ import QuotaCore
 
 @MainActor
 final class QuotaStore: ObservableObject {
+    enum Activity { case reading, refreshing, selecting }
     @Published var result: QuotaResult?
     @Published var message = ""
-    @Published var busy = false
+    @Published private(set) var activity: Activity?
     @Published var connectionFailed = false
     @Published var codexRunning = false
     @Published var origin = UserDefaults.standard.string(forKey: "server") ?? ""
@@ -28,9 +29,11 @@ final class QuotaStore: ObservableObject {
 
     var account: QuotaAccount? { result?.accounts.first { $0.alias == selected } ?? result?.accounts.first }
     var configured: Bool { api != nil && key != nil }
+    var busy: Bool { activity != nil }
+    var acting: Bool { activity == .refreshing || activity == .selecting }
     var shouldShow: Bool { !configured || alwaysShow || codexRunning }
-    var canRefresh: Bool { configured && !busy && account?.supported == true && Date() >= gate.refreshAfter }
-    var canChangeSelection: Bool { configured && !busy && !connectionFailed && result?.selectionSupported == true && Date() >= gate.readAfter }
+    var canRefresh: Bool { configured && !acting && account?.supported == true && Date() >= gate.refreshAfter }
+    var canChangeSelection: Bool { configured && !acting && !connectionFailed && result?.selectionSupported == true && Date() >= gate.readAfter }
     var canPreferAccount: Bool {
         canChangeSelection && account?.usable == true && account?.supported == true &&
         !(result?.selection?.mode == "manual" && result?.selection?.alias == account?.alias)
@@ -86,11 +89,16 @@ final class QuotaStore: ObservableObject {
         selected = alias
         defaults.set(alias, forKey: "primary:" + origin)
     }
-    func saveNote(_ note: String) {
-        guard let account else { return }
+    func canSaveNote(alias: String, origin: String) -> Bool {
+        self.origin == origin && result?.accounts.contains(where: { $0.alias == alias }) == true
+    }
+    @discardableResult
+    func saveNote(_ note: String, alias: String, origin: String) -> Bool {
+        guard canSaveNote(alias: alias, origin: origin) else { return false }
         let value = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
-        notes[account.alias] = value.isEmpty ? nil : value
+        notes[alias] = value.isEmpty ? nil : value
         defaults.set(notes, forKey: "notes:" + origin)
+        return true
     }
     func configure(server: String, replacementKey: String) throws {
         let normalized = try Endpoint.normalize(server)
@@ -106,7 +114,7 @@ final class QuotaStore: ObservableObject {
         operation?.cancel()
         generation = UUID()
         result = nil
-        busy = false
+        activity = nil
         connectionFailed = false
         gate = RequestGate()
         origin = normalized
@@ -124,7 +132,7 @@ final class QuotaStore: ObservableObject {
         key = nil
         api = nil
         result = nil
-        busy = false
+        activity = nil
         connectionFailed = false
         message = "已删除此服务的 Keychain 密钥。"
     }
@@ -151,9 +159,13 @@ final class QuotaStore: ObservableObject {
     }
     private func request(refresh: Bool, changeSelection: Bool = false, preferredAlias: String? = nil) {
         guard let api, let key else { return }
+        // Explicit actions can replace a passive GET. Its late completion cannot update this operation.
+        operation?.cancel()
+        generation = UUID()
         let version = generation
         let alias = account?.alias
-        busy = true
+        activity = changeSelection ? .selecting : refresh ? .refreshing : .reading
+        if refresh { message = "正在查询额度…" }
         if changeSelection { message = "正在切换调用账号…" }
         operation = Task { [weak self] in
             do {
@@ -197,7 +209,7 @@ final class QuotaStore: ObservableObject {
                 self.gate.failure(error, now: Date())
             }
             guard let self, version == self.generation else { return }
-            self.busy = false
+            self.activity = nil
         }
     }
 }

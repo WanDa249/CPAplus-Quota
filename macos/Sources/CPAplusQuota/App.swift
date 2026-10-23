@@ -85,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !store.shouldShow { popover.performClose(nil) }
     }
     @objc private func togglePopover() {
+        if let settings, settings.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            settings.makeKeyAndOrderFront(nil)
+            return
+        }
         guard let button = item.button else { return }
         if popover.isShown { popover.performClose(nil) }
         else { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY) }
@@ -96,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "CPAplus 额度助手设置"
             window.isReleasedWhenClosed = false
-            window.contentViewController = NSHostingController(rootView: SettingsView(store: store))
+            window.contentViewController = NSHostingController(rootView: SettingsView(store: store, closeSettings: { [weak window] in window?.performClose(nil) }))
             window.center()
             settings = window
         }
