@@ -19,7 +19,7 @@
 
 ## 下载与安装
 
-0.1.2-beta 构建与下载链接将在本轮原生 CI 验证通过后记录于 [构建、测试与校验记录](VALIDATION.md)。最低部署目标 macOS 13；旧版已在 macOS 15.7.9 Runner 启动验证，macOS 13/14 实际运行仍待测试。
+下载入口为 [macOS Native Beta 工作流](https://github.com/WanDa249/CPAplus-Quota/actions/workflows/macos-beta.yml?query=branch%3Amacos%2Fnative-beta)中 0.1.2-beta 源码对应的成功运行。[构建、测试与校验记录](https://github.com/WanDa249/CPAplus-Quota/blob/macos/native-beta/macos/VALIDATION.md)记录经过核验的具体产物。最低部署目标 macOS 13；macOS 13/14 实际运行仍待测试。
 
 1. 在仓库 Actions 中打开成功的 **macOS Native Beta** 运行，在 Artifacts 下载 `CPAplusQuota-macOS-UNSIGNED-universal-built-on-arm64`。内含 Universal ZIP，支持 Apple Silicon 和 Intel。需要登录 GitHub；测试产物保留30天，可手动重新运行工作流。
 2. 解压 Artifact，再解压其中的 `CPAplusQuota-0.1.2-beta-macos-universal-UNSIGNED.zip`。对内部 ZIP 执行 `shasum -a 256 文件名.zip`，与旁边 `SHA256SUMS.txt` 比对。校验和只能验证完整性，不能代替发布者身份。

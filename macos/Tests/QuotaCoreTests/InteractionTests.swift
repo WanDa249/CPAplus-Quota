@@ -6,11 +6,11 @@ import QuotaCore
 // Hold responses without blocking URLSession's callback queue. All fixture state stays on the main actor.
 final class HeldProtocol: URLProtocol {
     @MainActor static var handler: ((HeldProtocol) -> Void)?
-    @MainActor static var cancellations = 0
+    @MainActor private(set) var stopped = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Task { @MainActor in Self.handler?(self) } }
-    override func stopLoading() { Task { @MainActor in Self.cancellations += 1 } }
+    override func stopLoading() { Task { @MainActor in self.stopped = true } }
     @MainActor func finish(_ code: Int = 200, data: Data = selectionFixture()) {
         let response = HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -40,7 +40,6 @@ final class InteractionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite); HeldProtocol.handler = nil }
         var methods: [String] = []
         var held: HeldProtocol?
-        HeldProtocol.cancellations = 0
         HeldProtocol.handler = { request in
             methods.append(request.request.httpMethod!)
             if methods.count == 1 { request.finish() }
@@ -51,12 +50,13 @@ final class InteractionTests: XCTestCase {
         let successAt = store.account?.lastSuccessAt
         store.read(force: true)
         await wait { methods.count == 2 }
+        let passive = try XCTUnwrap(held)
         XCTAssertEqual(store.activity, .reading)
         XCTAssertTrue(store.canRefresh)
         XCTAssertTrue(store.canChangeSelection)
         store.refresh()
         XCTAssertEqual(store.activity, .refreshing)
-        await wait { methods.count == 3 && HeldProtocol.cancellations == 1 }
+        await wait { methods.count == 3 && passive.stopped }
         store.read(force: true)
         store.refresh()
         store.preferAccount("账号 def456")
@@ -84,7 +84,6 @@ final class InteractionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite); HeldProtocol.handler = nil }
         var methods: [String] = []
         var held: HeldProtocol?
-        HeldProtocol.cancellations = 0
         HeldProtocol.handler = { request in
             methods.append(request.request.httpMethod!)
             if methods.count == 1 { request.finish() }
@@ -94,10 +93,11 @@ final class InteractionTests: XCTestCase {
         await wait { !store.busy }
         store.read(force: true)
         await wait { methods.count == 2 }
+        let passive = try XCTUnwrap(held)
         store.preferAccount("账号 def456")
         XCTAssertEqual(store.activity, .selecting)
         XCTAssertEqual(store.account?.alias, "账号 abc123")
-        await wait { methods.count == 3 && HeldProtocol.cancellations == 1 }
+        await wait { methods.count == 3 && passive.stopped }
         XCTAssertTrue(store.busy)
         store.preferAccount(nil)
         store.refresh()
@@ -181,11 +181,11 @@ final class InteractionTests: XCTestCase {
         let api = try QuotaAPI(origin: "https://quota.invalid", session: URLSession(configuration: configuration))
         return (QuotaStore(api: api, key: "cpa-fake-key-only", origin: "https://quota.invalid", defaults: defaults), defaults, suite)
     }
-    @MainActor private func wait(_ condition: () -> Bool) async {
+    @MainActor private func wait(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
         for _ in 0..<200 {
             if condition() { return }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTFail("Interaction did not settle")
+        XCTFail("Interaction did not settle", file: file, line: line)
     }
 }
