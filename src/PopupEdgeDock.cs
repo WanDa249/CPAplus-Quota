@@ -141,9 +141,17 @@ internal sealed class PopupEdgeDock : IDisposable
             tab=new Window {Title="CPAplus 额度 · 贴边",Width=10,Height=64,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,AllowsTransparency=true,Background=Brushes.Transparent,ShowInTaskbar=false,ShowActivated=false,Topmost=true,Content=hit};
             tab.MouseLeftButtonDown+=delegate {Expand(true);};
         }
-        tab.Left=side<0?area.Left*scale.M11:area.Right*scale.M11-tab.Width;
-        tab.Top=Math.Max(area.Top*scale.M22,Math.Min(popup.Top+24,area.Bottom*scale.M22-tab.Height));
+        // A new handle starts with the primary monitor's DPI. Place it in physical pixels
+        // before showing so a different-DPI left monitor cannot put it offscreen.
+        var handle=new WindowInteropHelper(tab).EnsureHandle();DesktopFacts.Rect bounds;
+        DesktopFacts.GetWindowRect(new WindowInteropHelper(popup).Handle,out bounds);
+        int width=(int)Math.Round(10/scale.M11),height=(int)Math.Round(64/scale.M22);
+        int left=side<0?area.Left:area.Right-width;
+        int top=Math.Max(area.Top,Math.Min(bounds.Top+(int)Math.Ceiling(24/scale.M22),area.Bottom-height));
+        DesktopFacts.SetWindowPos(handle,IntPtr.Zero,left,top,width,height,0x14);
         tab.Show();
+        // Showing on a new DPI can resize the HWND again; settle inside the target edge.
+        DesktopFacts.SetWindowPos(handle,IntPtr.Zero,left,top,width,height,0x14);
     }
     private void Stow(bool animate)
     {

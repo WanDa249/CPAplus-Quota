@@ -31,7 +31,7 @@ internal sealed class QuotaPopup : Window
     // WM_SIZE can update Height's base value mid-animation; retain the content target.
     private double desiredHeight=double.NaN;
     private bool resizing,resizeQueued,userPositioned;
-    private int resizeBottom;
+    private int resizeBottom,resizeTop,resizeLift;
     private bool closing,editingKey,paused;
     private bool busy;
     internal event EventHandler RefreshRequested,ConfigureRequested,PinRequested,NotesChanged;
@@ -128,7 +128,7 @@ internal sealed class QuotaPopup : Window
     private IntPtr KeepResizeAnchor(IntPtr window,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
     {
         // Only an interactive move changes placement mode; programmatic layout does not.
-        if(message==0x231){userPositioned=true;edgeDock.BeginMove();} // WM_ENTERSIZEMOVE
+        if(message==0x231){userPositioned=true;resizeLift=0;edgeDock.BeginMove();} // WM_ENTERSIZEMOVE
         if(message==0x232)edgeDock.EndMove(); // WM_EXITSIZEMOVE
         if(message==0x46&&edgeDock.Docked){
             var position=(WindowPosition)Marshal.PtrToStructure(lParam,typeof(WindowPosition));WindowRect current;
@@ -138,12 +138,19 @@ internal sealed class QuotaPopup : Window
                 if(top!=position.y){position.y=top;position.flags&=~2u;Marshal.StructureToPtr(position,lParam,false);}
             }
         }
-        // Apply height and bottom anchoring in the same native operation, before painting.
-        if(message==0x46&&resizing&&!Topmost&&!userPositioned){
+        // Keep every resize frame on-screen, including manually placed and pinned popups.
+        if(message==0x46&&resizing){
             var position=(WindowPosition)Marshal.PtrToStructure(lParam,typeof(WindowPosition));
             WindowRect current;
             if((position.flags&1)==0&&GetWindowRect(window,out current)){
-                position.x=current.left;position.y=resizeBottom-position.height;position.flags&=~2u;
+                bool bottomAnchored=!Topmost&&!userPositioned;
+                position.x=current.left;position.y=bottomAnchored?resizeBottom-position.height:resizeTop;position.flags&=~2u;
+                var work=System.Windows.Forms.Screen.FromHandle(window).WorkingArea;
+                int margin=(int)Math.Ceiling(12/HwndSource.FromHwnd(window).CompositionTarget.TransformFromDevice.M22);
+                int proposed=(position.flags&2)!=0?current.top:position.y;
+                int top=Math.Max(work.Top+margin,Math.Min(proposed,work.Bottom-position.height-margin));
+                resizeLift=bottomAnchored?0:resizeTop-top;
+                if(top!=proposed){if((position.flags&2)!=0)position.x=current.left;position.y=top;position.flags&=~2u;}
                 Marshal.StructureToPtr(position,lParam,false);
             }
         }
@@ -180,7 +187,9 @@ internal sealed class QuotaPopup : Window
         double left=area.Left*scale.M11+12,top=area.Top*scale.M22+12;
         double right=Math.Max(left,area.Right*scale.M11-Width-12),bottom=Math.Max(top,area.Bottom*scale.M22-Math.Min(Height,MaxHeight)-12);
         Left=userPositioned?Math.Max(left,Math.Min(Left,right)):right;
-        Top=userPositioned?Math.Max(top,Math.Min(Top,bottom)):bottom;
+        double requestedTop=Top+resizeLift*scale.M22;
+        Top=userPositioned?Math.Max(top,Math.Min(requestedTop,bottom)):bottom;
+        resizeLift=userPositioned?(int)Math.Round((requestedTop-Top)/scale.M22):0;
     }
     private void ResizePopup(double contentHeight)
     {
@@ -188,7 +197,7 @@ internal sealed class QuotaPopup : Window
         if(Math.Abs(target-desiredHeight)<0.5)return;
         desiredHeight=target;double current=ActualHeight;
         if(IsVisible&&current>0){
-            WindowRect bounds;GetWindowRect(new WindowInteropHelper(this).Handle,out bounds);resizeBottom=bounds.bottom;resizing=true;
+            WindowRect bounds;GetWindowRect(new WindowInteropHelper(this).Handle,out bounds);resizeBottom=bounds.bottom;resizeTop=bounds.top+resizeLift;resizing=true;
             var animation=new DoubleAnimation(current,target,TimeSpan.FromMilliseconds(240)) {EasingFunction=new SineEase {EasingMode=EasingMode.EaseInOut}};
             animation.Completed+=delegate {Height=desiredHeight;BeginAnimation(HeightProperty,null);resizing=false;};
             BeginAnimation(HeightProperty,animation);

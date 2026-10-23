@@ -27,13 +27,13 @@ internal static class DockProbe
     private static void Click(FrameworkElement root,string name){((Button)root.FindName(name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));}
     private static void Toggle(FrameworkElement root,bool value){var option=(CheckBox)root.FindName("EdgeSetting");option.IsChecked=value;option.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));}
     private static bool Draggable(QuotaPopup popup,DependencyObject source){return (bool)typeof(QuotaPopup).GetMethod("CanDragFrom",Flags).Invoke(popup,new object[]{source});}
-    private static void Drag(QuotaPopup popup,bool edge)
+    private static void Drag(QuotaPopup popup,bool edge,bool left=false)
     {
         var handle=new WindowInteropHelper(popup).Handle;
-        var screen=System.Windows.Forms.Screen.AllScreens.OrderByDescending(s=>s.Bounds.Right).First();var area=screen.WorkingArea;
+        var screen=left?System.Windows.Forms.Screen.AllScreens.OrderBy(s=>s.Bounds.Left).First():System.Windows.Forms.Screen.AllScreens.OrderByDescending(s=>s.Bounds.Right).First();var area=screen.WorkingArea;
         SendMessage(handle,0x231,IntPtr.Zero,IntPtr.Zero);
         DesktopFacts.SetWindowPos(handle,IntPtr.Zero,area.Right-500,area.Top+45,0,0,0x15);Pump(30);
-        var rect=Bounds(popup);DesktopFacts.SetWindowPos(handle,IntPtr.Zero,edge?area.Right-rect.Width-4:area.Left+80,area.Top+45,0,0,0x15);
+        var rect=Bounds(popup);DesktopFacts.SetWindowPos(handle,IntPtr.Zero,edge?(left?area.Left+4:area.Right-rect.Width-4):area.Left+80,area.Top+45,0,0,0x15);
         SendMessage(handle,0x232,IntPtr.Zero,IntPtr.Zero);
     }
     [STAThread] private static int Main(string[] args)
@@ -126,6 +126,33 @@ internal static class DockProbe
             Check(!dock.Docked&&!timer.IsEnabled,"overflow recovery also works with auto-hide disabled");
             Toggle(root,true);
             if(args.Contains("--preview")){popup.ShowInTaskbar=true;Drag(popup,true);timer.Stop();Pump(300000);return 0;}
+            {
+                foreach(bool left in new[]{true,false}){
+                    Drag(popup,true,left);timer.Stop();Pump(350);
+                    var edgeArea=Field<Rectangle>(dock,"area");
+                    var edgeScale=HwndSource.FromHwnd(handle).CompositionTarget.TransformFromDevice;
+                    popup.Top=edgeArea.Bottom*edgeScale.M22-popup.Height-12;Pump(50);
+                    var edgeAnchor=Bounds(popup);
+                    Console.WriteLine("MEASURE dock left="+left+" area="+edgeArea+" popup="+edgeAnchor+" scale="+HwndSource.FromHwnd(handle).CompositionTarget.TransformFromDevice);
+                    Check(dock.Docked,"real exterior edge docks; left="+left);
+                    Click(root,"SettingsButton");Pump(350);popup.ShowKeyEditor("fake-edge-key");Pump(350);
+                    Click(root,"BackButton");Pump(350);Click(root,"BackButton");Pump(350);
+                    Check(Math.Abs(Bounds(popup).Top-edgeAnchor.Top)<=1,"docked settings/key return restores original bottom placement; left="+left);
+                    timer.Stop();dock.PrepareShow();
+                    for(int cycle=0;cycle<3;cycle++){
+                        long time=cycle*3000;var away=new Point(edgeArea.Left+edgeArea.Width/2,edgeArea.Bottom-5);
+                        Drive(dock,away,time);Drive(dock,away,time+600);Pump(300);
+                        var edgeTab=Field<Window>(dock,"tab");
+                        Console.WriteLine("MEASURE stowed left="+left+" cycle="+cycle+" tab="+Bounds(edgeTab)+" popup="+Bounds(popup)+" tabVisible="+edgeTab.IsVisible);
+                        Check(!popup.IsVisible&&edgeTab.IsVisible&&edgeArea.Contains(Bounds(edgeTab)),"edge handle remains reachable; left="+left+" cycle="+cycle);
+                        var hover=Center(Bounds(edgeTab));Drive(dock,hover,time+1000);Drive(dock,hover,time+1300);Pump(300);
+                        Console.WriteLine("MEASURE expanded left="+left+" cycle="+cycle+" popup="+Bounds(popup));
+                        Check(popup.IsVisible&&!edgeTab.IsVisible&&edgeArea.Contains(Bounds(popup))&&Math.Abs(Bounds(popup).Left-edgeAnchor.Left)<=1,"hover fully restores edge panel; left="+left+" cycle="+cycle);
+                    }
+                }
+                if(args.Contains("--edges-only"))return 0;
+                Drag(popup,false);timer.Stop();Pump(300);
+            }
             foreach(string name in new[]{"HomePage","MainCard","AccountName","AccountState","Heading"})
                 Check(Draggable(popup,(DependencyObject)root.FindName(name)),name+" permits dragging from passive content");
             foreach(string name in new[]{"CloseButton","SettingsButton","RefreshButton","NoteInput","ServerInput","KeyInput","DisplayMode","EdgeSetting","OtherAccounts"})
@@ -157,7 +184,8 @@ internal static class DockProbe
             Drive(dock,outside,1300);Check(Field<bool>(dock,"moving"),"600ms leave starts smooth retract");Pump();
             var tab=Field<Window>(dock,"tab");Check(!popup.IsVisible&&tab.IsVisible&&Field<bool>(dock,"stowed"),"retract leaves only a compact edge handle");
             var work=System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(tab).Handle).WorkingArea;
-            Check(work.Contains(Bounds(tab))&&tab.Width==10&&tab.Height==64,"handle is bounded inside usable screen area");
+            var tabScale=HwndSource.FromHwnd(new WindowInteropHelper(tab).Handle).CompositionTarget.TransformFromDevice;
+            Check(work.Contains(Bounds(tab))&&Bounds(tab).Width==(int)Math.Round(10/tabScale.M11)&&Bounds(tab).Height==(int)Math.Round(64/tabScale.M22),"handle fits work area at its own monitor DPI without size drift");
             Check(!popup.HasAnimatedProperties,"completed retract releases animation clock");
             var overTab=Center(Bounds(tab));Drive(dock,overTab,2000);Drive(dock,overTab,2299);
             Check(!popup.IsVisible,"passing over handle does not immediately pop open");
@@ -196,6 +224,34 @@ internal static class DockProbe
             Check(!dock.Docked&&!timer.IsEnabled&&popup.IsVisible&&!popup.Topmost,"dragging away cancels docking and timer");
             popup.SetPinned(true);Drag(popup,true);timer.Stop();Drag(popup,false);
             Check(popup.Topmost,"undocking preserves an explicitly pinned popup");popup.SetPinned(false);
+            foreach(bool pinned in new[]{false,true}){
+                Drag(popup,false);popup.SetPinned(pinned);Pump(300);
+                var growthArea=System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+                var growthScale=HwndSource.FromHwnd(handle).CompositionTarget.TransformFromDevice;
+                popup.Top=growthArea.Bottom*growthScale.M22-popup.Height-12;Pump(50);
+                int growthOverflow=0,growthSamples=0;double growthLeft=popup.Left;var growthAnchor=Bounds(popup);
+                HwndSourceHook growing=delegate(IntPtr hwnd,int message,IntPtr w,IntPtr l,ref bool handled){
+                    if(message==0x47){growthSamples++;var r=Bounds(popup);growthOverflow=Math.Max(growthOverflow,Math.Max(r.Bottom-growthArea.Bottom,growthArea.Top-r.Top));}
+                    return IntPtr.Zero;
+                };
+                var growthSource=HwndSource.FromHwnd(handle);growthSource.AddHook(growing);
+                try {
+                    Click(root,"SettingsButton");Pump(350);
+                    popup.ShowKeyEditor("fake-growth-key");Pump(350);
+                    Click(root,"BackButton");Pump(350);
+                    Click(root,"BackButton");Pump(350);
+                }finally {growthSource.RemoveHook(growing);}
+                Console.WriteLine("MEASURE user-positioned growth pinned="+pinned+" overflowPx="+growthOverflow+" nativeSamples="+growthSamples);
+                Check(growthSamples>0&&growthOverflow==0,"all native settings/key resize frames remain inside work area; pinned="+pinned);
+                Check(Math.Abs(popup.Left-growthLeft)<0.5&&!dock.Docked,"resize preserves manual horizontal position without docking; pinned="+pinned);
+                Console.WriteLine("MEASURE settings return pinned="+pinned+" before="+growthAnchor+" after="+Bounds(popup));
+                Check(Math.Abs(Bounds(popup).Top-growthAnchor.Top)<=1,"return from taller pages restores original manual top; pinned="+pinned);
+                Click(root,"SettingsButton");Pump(350);Click(root,"CloseButton");Pump(50);popup.ShowPopup();Pump(350);
+                Check(Math.Abs(Bounds(popup).Top-growthAnchor.Top)<=1,"closing taller page then reopening home restores original top; pinned="+pinned);
+                Click(root,"SettingsButton");Pump(70);Click(root,"BackButton");Pump(350);
+                Check(Math.Abs(Bounds(popup).Top-growthAnchor.Top)<=1,"reversing page growth mid-animation restores original top; pinned="+pinned);
+            }
+            popup.SetPinned(false);
             Drag(popup,true);timer.Stop();anchor=Bounds(popup);
             popup.Top=work.Bottom*HwndSource.FromHwnd(handle).CompositionTarget.TransformFromDevice.M22-popup.Height-12;
             int largestOverflow=0;var source=HwndSource.FromHwnd(handle);
