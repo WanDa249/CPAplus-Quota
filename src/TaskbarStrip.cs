@@ -68,11 +68,12 @@ internal sealed class TaskbarStrip : Form
         if(previous!=selected&&AccountSelected!=null)AccountSelected(selected);
         var text=new StringBuilder(AccountNames.Label(a)+"\n");
         if(!string.IsNullOrEmpty(failure))text.Append(failure+" · 显示上次结果\n");
-        text.Append(a.frozen?"已冻结":a.disabled?"已停用":a.available?"可用":"当前不可用");
+        text.Append(a.personalQuota?AccountPresentation.State(a):a.frozen?"已冻结":a.disabled?"已停用":a.available?"可用":"当前不可用");
         if(a.stale)text.Append(" · 额度信息已过期");
         if(a.cacheStatus=="error")text.Append(" · 最近查询失败");
         if(a.fiveHour!=null)text.Append("\n五小时重置 "+Theme.Time(a.fiveHour.resetAt));
-        if(a.weekly!=null)text.Append("\n周额度重置 "+Theme.Time(a.weekly.resetAt));
+        if(a.weekly!=null)text.Append("\n"+(a.personalQuota?a.quotaPeriod:"周额度")+"重置 "+Theme.Time(a.weekly.resetAt));
+        if(a.personalQuota&&!string.IsNullOrEmpty(a.quotaNote))text.Append("\n"+a.quotaNote);
         text.Append("\n最近成功 "+Theme.Time(a.lastSuccessAt)+"\n点击查看全部绑定账号；滚轮切换显示账号。");
         text.Append("\n颜色：高于50%绿，高于20%至50%黄，20%及以下红；小圆点表示状态需注意。");
         tooltip.SetToolTip(this,text.ToString());lastText=null;

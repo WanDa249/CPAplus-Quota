@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -30,7 +30,7 @@ internal static class CredentialStore
     [DllImport("advapi32.dll")]
     private static extern void CredFree(IntPtr credential);
 
-    internal static void Save(string target, string key)
+    internal static void Save(string target, string key, string label = "CPA API Key")
     {
         byte[] bytes = Encoding.Unicode.GetBytes(key);
         IntPtr blob = Marshal.AllocHGlobal(bytes.Length);
@@ -38,7 +38,7 @@ internal static class CredentialStore
         {
             Marshal.Copy(bytes, 0, blob, bytes.Length);
             var credential = new Credential {
-                Type = Generic, TargetName = target, UserName = "CPA API Key",
+                Type = Generic, TargetName = target, UserName = label,
                 CredentialBlob = blob, CredentialBlobSize = (uint)bytes.Length,
                 Persist = 2, Comment = "CPAplus quota assistant; HTTPS origin scoped credential"
             };

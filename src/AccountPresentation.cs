@@ -29,6 +29,7 @@ internal static class AccountNames
     internal static string Label(QuotaAccount account)
     {
         if(account==null)return "尚无账号";
+        if (account.personalQuota) return account.displayName;
         return Note(account.alias)??(!string.IsNullOrWhiteSpace(account.displayName)?account.displayName:Label(account.alias));
     }
     internal static string Label(string alias)
@@ -67,6 +68,7 @@ internal static class AccountPresentation
     }
     internal static string State(QuotaAccount a)
     {
+        if(a.personalQuota)return a.weekly==null?"未分配":a.weekly.remainingPercent==0?"额度已用尽":"个人额度";
         if(a.frozen)return "已冻结";
         if(a.disabled)return "已停用";
         if(!a.availabilityKnown)return "状态未知";
@@ -83,6 +85,8 @@ internal static class AccountPresentation
     internal static string Percent(QuotaWindow w){return w==null||!w.remainingPercent.HasValue?"—":w.remainingPercent.Value.ToString("0")+"%";}
     internal static string[] QuotaParts(QuotaAccount a,bool compact)
     {
+        if(a.personalQuota)
+            return new[]{a.weekly==null?"Sub2 未分配":(compact?"Sub2 ":"Sub2 "+a.quotaPeriod+" ")+Percent(a.weekly)};
         var parts=new List<string>();string gap=compact?"":" ";
         if(a.fiveHour!=null)parts.Add("5h"+gap+Percent(a.fiveHour));
         if(a.weekly!=null)parts.Add("周"+gap+Percent(a.weekly));

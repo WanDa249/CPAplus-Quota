@@ -1,5 +1,7 @@
 using System;
 using System.Windows.Forms;
+using System.Threading;
+using System.Threading.Tasks;
 
 internal static class Theme
 {
@@ -19,7 +21,9 @@ internal sealed class QuotaForm : Form
     internal event Action<int> ModeRequested;
     internal event Action<string> AccountSelected;
     internal event Action<string> PreferAccountRequested;
-    internal event Action<string> KeySaveRequested;
+    internal event Action<string,bool> KeySaveRequested;
+    internal Func<string,bool> ReuseSub2Session;
+    internal Func<string,string,string,string,CancellationToken,Task<string>> AuthenticateSub2;
     internal event EventHandler PopupCreated;
     internal event Action<bool> StartupRequested;
     internal QuotaForm()
@@ -30,6 +34,8 @@ internal sealed class QuotaForm : Form
     {
         if(popup!=null)return;
         popup=new QuotaPopup();
+        popup.ReuseSub2Session=ReuseSub2Session;
+        popup.AuthenticateSub2=AuthenticateSub2;
         popup.RefreshRequested+=delegate {if(RefreshRequested!=null)RefreshRequested(this,EventArgs.Empty);};
         popup.ConfigureRequested+=delegate {if(ConfigureRequested!=null)ConfigureRequested(this,EventArgs.Empty);};
         popup.PinRequested+=delegate {if(PinRequested!=null)PinRequested(this,EventArgs.Empty);};
@@ -37,7 +43,7 @@ internal sealed class QuotaForm : Form
         popup.ModeRequested+=delegate(int value){if(ModeRequested!=null)ModeRequested(value);};
         popup.AccountSelected+=delegate(string alias){if(AccountSelected!=null)AccountSelected(alias);};
         popup.PreferAccountRequested+=delegate(string alias){if(PreferAccountRequested!=null)PreferAccountRequested(alias);};
-        popup.KeySaveRequested+=delegate(string value){if(KeySaveRequested!=null)KeySaveRequested(value);};
+        popup.KeySaveRequested+=delegate(string value,bool sub2){if(KeySaveRequested!=null)KeySaveRequested(value,sub2);};
         popup.StartupRequested+=delegate(bool value){if(StartupRequested!=null)StartupRequested(value);};
         if(PopupCreated!=null)PopupCreated(this,EventArgs.Empty);
         if(status!=null)popup.SetStatus(status,statusError);
@@ -52,6 +58,7 @@ internal sealed class QuotaForm : Form
     internal void ShowAccounts(QuotaResult data,string primaryAlias){status=null;if(popup!=null)popup.SetAccounts(data,primaryAlias);}
     internal void SetPrimaryAlias(string alias){if(popup!=null)popup.SetPrimary(alias);}
     internal void SetDisplayMode(int value){if(popup!=null)popup.SetMode(value);}
+    internal void SetSource(string sub2Server, bool signedIn, string key) { if(popup!=null)popup.SetSource(sub2Server,signedIn,key); }
     internal void SetKeyLabel(string key){if(popup!=null)popup.SetKeyLabel(key);}
     internal void SetPaused(bool value){if(popup!=null)popup.SetPaused(value);}
     internal void SetStartup(bool value){if(popup!=null)popup.SetStartup(value);}

@@ -49,7 +49,7 @@ internal static class RoutingProbe
             using(var api=new QuotaApi(handler,"https://quota.example.invalid")) {
                 var data=Wait(()=>api.SelectAccountAsync("fake-bound",null,CancellationToken.None));
                 data=Wait(()=>api.ReadAsync("fake-bound",CancellationToken.None));
-                Check(data.selection.mode=="auto"&&data.accounts.Count==2,"actual Go API returns own group and automatic selection");
+                Check(data.selection.mode=="auto"&&data.accounts.Count==2,"CPA contract returns own group and automatic selection");
                 Check(data.accounts[0].displayName=="b.json@example.invalid","API list follows descending priority");
                 int start=handler.Selections;
                 popup=new QuotaPopup();strip=new TaskbarStrip();
@@ -63,7 +63,7 @@ internal static class RoutingProbe
                 Click(Choice(root));
                 Check(events==1&&selected==data.accounts[1].alias&&display==0,"explicit other-account click requests preference only");
                 data=Wait(()=>api.SelectAccountAsync("fake-bound",selected,CancellationToken.None));
-                Check(data.selection.mode=="manual"&&data.selection.alias==selected,"real transport and Go API acknowledge exact selected account");
+                Check(data.selection.mode=="manual"&&data.selection.alias==selected,"CPA transport and fixture acknowledge exact selected account");
                 popup.SetData(data);popup.SetPrimary(selected);strip.UpdateData(data,null);strip.SelectAccount(selected);
                 Check(strip.SelectedAlias==selected,"taskbar main display follows confirmed preference");
                 Check(((Button)root.FindName("AutoRouteButton")).IsEnabled,"automatic-order reset available in settings");

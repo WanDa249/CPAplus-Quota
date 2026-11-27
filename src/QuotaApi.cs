@@ -28,6 +28,9 @@ internal sealed class QuotaAccount
     public string lastAttemptAt { get; set; }
     public QuotaWindow fiveHour { get; set; }
     public QuotaWindow weekly { get; set; }
+    internal bool personalQuota;
+    internal string quotaPeriod;
+    internal string quotaNote;
 }
 
 internal sealed class QuotaResult

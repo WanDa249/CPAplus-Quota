@@ -59,6 +59,14 @@ internal sealed class TrayContext : ApplicationContext
     private readonly TaskbarStrip strip;
     private readonly DesktopMonitor desktop;
     private QuotaApi api = new QuotaApi();
+    private Sub2QuotaApi sub2;
+    private Sub2QuotaApi draftSub2;
+    private bool useSub2;
+    private bool sub2Connected;
+    private bool sub2Rejected;
+    private bool sub2SigningOut;
+    private bool HasConnection { get { return useSub2 ? sub2Connected : key != null; } }
+    private string SourceLabel { get { return useSub2 ? "Sub2 额度" : "CPAplus 额度"; } }
     private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 15000 };
     private readonly ToolStripMenuItem pinMenu = new ToolStripMenuItem("置顶悬浮") { CheckOnClick = true };
     private CancellationTokenSource request;
@@ -109,7 +117,11 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("查看额度", null, delegate { form.ShowPopup(); });
         pinMenu.CheckedChanged += delegate { form.SetPinned(pinMenu.Checked); };
         menu.Items.Add("刷新", null, async delegate { form.ShowPopup();await Refresh(true); });
-        menu.Items.Add("更换密钥…", null, delegate { Configure(); });
+        menu.Items.Add("服务地址…", null, delegate { Configure(); });
+        var signOut = new ToolStripMenuItem("退出 Sub2 登录");
+        menu.Opening += delegate { signOut.Visible = useSub2; };
+        signOut.Click += async delegate { await SignOutSub2(); };
+        menu.Items.Add(signOut);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(modes);
         menu.Items.Add(pinMenu);
@@ -121,32 +133,43 @@ internal sealed class TrayContext : ApplicationContext
         form.RefreshRequested += async delegate { await Refresh(true); };
         form.ConfigureRequested += delegate { Configure(); };
         form.KeySaveRequested += SaveKey;
+        form.ReuseSub2Session = HasSub2Session;
+        form.AuthenticateSub2 = AuthenticateSub2;
         form.StartupRequested += SetStartup;
         form.PinRequested += delegate { pinMenu.Checked = !pinMenu.Checked; };
         timer.Tick += async delegate { await Refresh(); };
         try { key = string.IsNullOrEmpty(QuotaApi.BaseUrl)?null:CredentialStore.Load(CredentialStore.Target); }
         catch (System.ComponentModel.Win32Exception) { form.SetStatus("无法读取 Windows 凭据，请重新配置密钥。", true); }
         if (!QuotaApi.IsValidKey(key)) key = null;
+        try {
+            string origin=ServiceEndpoint.Sub2Server;
+            useSub2=ServiceEndpoint.UseSub2&&origin!=null;
+            if (useSub2) sub2=new Sub2QuotaApi(origin);
+            LoadSub2Connection();
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (System.Security.SecurityException) { }
         form.PopupCreated+=delegate {
-            form.SetKeyLabel(key);form.SetDisplayMode((int)desktop.Mode);form.SetPinned(pinMenu.Checked);form.SetBusy(request!=null&&!readingCache);form.SetStartup(StartupRegistration.Enabled);
+            form.SetSource(useSub2?sub2.Origin:null,sub2Connected,key);form.SetDisplayMode((int)desktop.Mode);form.SetPinned(pinMenu.Checked);form.SetBusy(request!=null&&!readingCache);form.SetStartup(StartupRegistration.Enabled);
             if(strip.CurrentData!=null)form.ShowAccounts(strip.CurrentData,strip.SelectedAlias);
             form.SetPaused(!active);
         };
         desktop.CodexRunningChanged+=delegate {UpdateActivity();};
         UpdateActivity();
         if (show) form.ShowPopup();
-        if (key == null) form.SetStatus("请在设置中配置服务地址并连接密钥。", false);
+        if (!HasConnection) form.SetStatus(useSub2?"请连接 Sub2 成员账号。":"请在设置中配置服务地址并连接密钥。", false);
     }
 
-    private void UpdateActivity(){SetActive(desktop.CodexRunning||desktop.Mode==VisibilityMode.Always);}
+    private void UpdateActivity(){SetActive(useSub2||desktop.CodexRunning||desktop.Mode==VisibilityMode.Always);}
     internal void SetActive(bool value)
     {
         if(activityInitialized&&active==value)return;
         activityInitialized=true;active=value;generation++;timer.Stop();
+        timer.Interval = useSub2 ? 60000 : 15000;
         var previous=request;request=null;if(previous!=null)previous.Cancel();
         form.SetBusy(false);form.ClearAccounts();strip.UpdateData(null,value?"正在查询额度…":"等待 Codex");
         if(!value){strip.Hide();form.SuspendPopup();tray.Text="CPAplus 额度 · 等待 Codex";}
-        else {form.SetPaused(false);if(key!=null){timer.Start();var read=Refresh();}}
+        else {form.SetPaused(false);if(HasConnection){timer.Start();var read=Refresh();}}
         WriteActivityEvidence();
     }
     private void SetStartup(bool enabled)
@@ -163,44 +186,124 @@ internal sealed class TrayContext : ApplicationContext
         System.IO.File.AppendAllText(System.IO.Path.Combine(DesktopMonitor.EvidenceDirectory,"resident-transitions.jsonl"),json+Environment.NewLine);
     }
 
-    private void Configure()
+    private void LoadSub2Connection()
     {
-        form.ShowKeyEditor(key);
+        try { sub2Connected = useSub2 && !sub2Rejected && sub2.HasSession(); }
+        catch (System.ComponentModel.Win32Exception) {
+            sub2Connected = false;
+            form.SetStatus("Windows 无法读取 Sub2 登录。", true);
+        }
     }
 
-    private void SaveKey(string next)
+    private void ResetSource()
     {
-        if(!QuotaApi.IsValidKey(next)){form.SetKeyError("请输入有效的 CPA API Key。");return;}
-        string server;
-        try {server=ServiceEndpoint.Normalize(form.ServerDraft);}
-        catch(ArgumentException){form.SetKeyError("请输入有效的 HTTPS 服务地址。");return;}
-        bool changed=server!=QuotaApi.BaseUrl;
-        try {
-            CredentialStore.Save("CPAplus/QuotaTray/"+server,next);
-            if(changed)ServiceEndpoint.Save(server);
-        }
-        catch (System.ComponentModel.Win32Exception) { form.SetKeyError("Windows 凭据保存失败，未切换密钥。"); return; }
-        catch (UnauthorizedAccessException) { form.SetKeyError("服务地址未能保存，未切换连接。"); return; }
-        catch (System.Security.SecurityException) { form.SetKeyError("Windows 不允许保存服务地址，未切换连接。"); return; }
-        generation++;
-        var previous = request;
-        request = null;
-        if (previous != null) previous.Cancel();
-        api.Dispose();api=new QuotaApi();
-        if(changed)AccountNames.Reload();
-        key = next;
-        form.SetKeyLabel(key);
-        form.ClearAccounts();
-        strip.UpdateData(null,"正在查询额度…");
-        form.SetStatus("已保存到 Windows 凭据管理器。", false);
+        activityInitialized = false;
         form.KeySaved();
-        if(active)timer.Start();
-        var read = Refresh();
+        form.SetSource(useSub2?sub2.Origin:null,sub2Connected,key);
+        tray.Text = SourceLabel;
+        UpdateActivity();
+        if (!HasConnection) form.SetStatus(useSub2?"请连接 Sub2 成员账号。":"请连接 CPA 密钥。", false);
+    }
+
+    private void Configure()
+    {
+        if (!sub2SigningOut && !exiting) form.ShowKeyEditor(useSub2 ? null : key);
+    }
+
+    private Sub2QuotaApi GetDraftSub2(string origin)
+    {
+        if(sub2!=null&&sub2.Origin==origin)return sub2;
+        if(draftSub2==null||draftSub2.Origin!=origin) {
+            if(draftSub2!=null)draftSub2.Dispose();
+            draftSub2=new Sub2QuotaApi(origin);
+        }
+        return draftSub2;
+    }
+
+    private bool HasSub2Session(string origin)
+    {
+        if(sub2SigningOut||(sub2Rejected&&sub2!=null&&sub2.Origin==origin))return false;
+        try{return GetDraftSub2(origin).HasSession();}
+        catch(System.ComponentModel.Win32Exception){return false;}
+    }
+
+    private async Task<string> AuthenticateSub2(string origin,string email,string secret,string challenge,CancellationToken cancellation)
+    {
+        if(exiting||sub2SigningOut)throw new InvalidOperationException("Sub2 connection unavailable.");
+        var connection=GetDraftSub2(origin);
+        if(challenge==null) {
+            challenge=await connection.SignInAsync(email,secret,cancellation);
+            if(challenge!=null)return challenge;
+        } else await connection.CompleteSignInAsync(challenge,secret,cancellation);
+        if(connection==sub2)sub2Rejected=false;
+        return null;
+    }
+
+    private async Task SignOutSub2()
+    {
+        if (!useSub2 || sub2SigningOut || exiting) return;
+        sub2SigningOut = true;
+        sub2Connected = false;
+        ResetSource();
+        try { await sub2.ForgetAsync(CancellationToken.None); }
+        catch (System.ComponentModel.Win32Exception) {
+            LoadSub2Connection();
+            ResetSource();
+            form.SetStatus("退出失败，Windows 无法删除登录凭据。", true);
+        }
+        finally { sub2SigningOut = false; }
+    }
+
+    private void SaveKey(string next,bool memberLogin)
+    {
+        if (exiting || sub2SigningOut) return;
+        string server;
+        try { server = ServiceEndpoint.Normalize(form.ServerDraft); }
+        catch (ArgumentException) { form.SetKeyError("请输入有效的 HTTPS 服务地址。"); return; }
+
+        try {
+            if (memberLogin) {
+                var connection=GetDraftSub2(server);
+                ServiceEndpoint.SaveSub2(server);
+                ServiceEndpoint.UseSub2 = true;
+                var previous=sub2;
+                if(previous!=connection)sub2Rejected=false;
+                sub2=connection;
+                if(draftSub2==sub2)draftSub2=null;
+                useSub2 = true;
+                LoadSub2Connection();
+                ResetSource();
+                if(previous!=null&&previous!=sub2)previous.Dispose();
+                return;
+            }
+
+            string target = "CPAplus/QuotaTray/" + server;
+            if (string.IsNullOrEmpty(next)) next = CredentialStore.Load(target);
+            if (!QuotaApi.IsValidKey(next)) {
+                form.SetKeyError("首次连接此 CPA 地址时请输入有效的 API Key。");
+                return;
+            }
+            if (server != QuotaApi.BaseUrl || next != key) CredentialStore.Save(target,next);
+            if (server != QuotaApi.BaseUrl) {
+                ServiceEndpoint.Save(server);
+                AccountNames.Reload();
+            }
+            ServiceEndpoint.UseSub2 = false;
+            useSub2 = false;
+            var previousApi = api;
+            api = new QuotaApi();
+            key = next;
+            ResetSource();
+            previousApi.Dispose();
+        }
+        catch (System.ComponentModel.Win32Exception) { form.SetKeyError("Windows 无法读取或保存连接凭据。"); }
+        catch (UnauthorizedAccessException) { form.SetKeyError("无法保存服务地址。"); }
+        catch (System.Security.SecurityException) { form.SetKeyError("Windows 不允许保存服务地址。"); }
     }
 
     private async Task SelectPreference(string alias)
     {
-        if(exiting||!active||key==null||(request!=null&&!readingCache))return;
+        if(exiting||useSub2||!active||key==null||(request!=null&&!readingCache))return;
         int version=++generation;
         var previous=request;request=null;if(previous!=null)previous.Cancel();
         var cancellation=new CancellationTokenSource();request=cancellation;readingCache=false;form.SetBusy(true);
@@ -232,7 +335,7 @@ internal sealed class TrayContext : ApplicationContext
             if(!manual||!readingCache)return;
             generation++;var previous=request;request=null;previous.Cancel();
         }
-        if(!active||key==null){if(manual)form.SetReadFeedback(key==null?"请先在设置中连接密钥。":"Codex 未运行，额度查询已暂停。");return;}
+        if(!active||!HasConnection){if(manual)form.SetReadFeedback(!HasConnection?(useSub2?"请先连接 Sub2 成员账号。":"请先在设置中连接密钥。"):"Codex 未运行，额度查询已暂停。");return;}
         readAttempts++;
         int version = generation;
         var cancellation = new CancellationTokenSource();
@@ -242,28 +345,38 @@ internal sealed class TrayContext : ApplicationContext
         {
             if(manual)form.SetReadFeedback("正在查询额度…");
             var alias=strip.SelectedAlias;
-            var data = manual&&alias!=null?await api.RefreshAsync(key,alias,cancellation.Token):await api.ReadAsync(key, cancellation.Token);
+            var data = useSub2 ? await sub2.ReadAsync(cancellation.Token)
+                : manual&&alias!=null?await api.RefreshAsync(key,alias,cancellation.Token):await api.ReadAsync(key,cancellation.Token);
             if (exiting || generation != version) return;
             strip.UpdateData(data,null);
             if(data.selection!=null&&data.selection.mode=="manual")strip.SelectAccount(data.selection.alias);
             else if(data.selection!=null)strip.SelectDefaultAccount();
             form.ShowAccounts(data,strip.SelectedAlias);
             if(manual)form.SetReadFeedback(AccountPresentation.RefreshFeedback(data));
-            tray.Text = "CPAplus 额度 · " + data.accounts.Count + " 个绑定账号";
+            tray.Text = useSub2 ? "Sub2 额度 · 个人预算" : "CPAplus 额度 · " + data.accounts.Count + " 个绑定账号";
         }
         catch (QuotaAuthException error)
         {
             if (exiting || generation != version) return;
             timer.Stop();
             form.ClearAccounts();
-            strip.UpdateData(null,"密钥不可用");
-            form.SetStatus(error.Unbound ? "密钥未绑定账号。请切换密钥，或联系管理员。" : "密钥无效或已撤销。请切换密钥。", true);
-            tray.Text = "CPAplus 额度 · 密钥需要处理";
+            if (useSub2) {
+                sub2Rejected = true;
+                sub2Connected = false;
+                form.SetSource(sub2.Origin,false,key);
+                strip.UpdateData(null,"请重新登录");
+                form.SetStatus("Sub2 登录失效或无权查看，请重新登录成员账号。",true);
+            } else {
+                strip.UpdateData(null,"密钥不可用");
+                form.SetStatus(error.Unbound ? "密钥未绑定账号。请切换密钥，或联系管理员。" : "密钥无效或已撤销。请切换密钥。", true);
+            }
+            tray.Text = SourceLabel+" · 连接需要处理";
         }
         catch (OperationCanceledException)
         {
             ReadFailed(version,true);
         }
+        catch (System.ComponentModel.Win32Exception) { ReadFailed(version); }
         catch (System.Net.Http.HttpRequestException) { ReadFailed(version); }
         catch (InvalidOperationException) { ReadFailed(version); }
         catch (ArgumentException) { ReadFailed(version); }
@@ -281,7 +394,7 @@ internal sealed class TrayContext : ApplicationContext
             string message=timeout?"查询超时":"暂时无法连接";
             bool retained=strip.CurrentData!=null;strip.UpdateData(strip.CurrentData,message);
             form.SetStatus(message+(retained?"，显示上次结果；将自动重试。":"，将自动重试。"),true);
-            tray.Text="CPAplus 额度 · "+message;
+            tray.Text=SourceLabel+" · "+message;
         }
     }
 
@@ -292,7 +405,7 @@ internal sealed class TrayContext : ApplicationContext
         desktop.Dispose(); strip.Close();strip.Dispose();
         if (request != null) request.Cancel();
         tray.Visible = false; tray.Dispose();menu.Dispose();
-        api.Dispose(); form.AllowClose = true; form.Close(); icon.Dispose();
+        api.Dispose(); if(sub2!=null)sub2.Dispose(); if(draftSub2!=null)draftSub2.Dispose(); form.AllowClose = true; form.Close(); icon.Dispose();
         base.ExitThreadCore();
     }
 }
