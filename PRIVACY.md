@@ -1,8 +1,8 @@
 # 数据与凭据
 
-本项目不内置真实服务器、默认用户或密钥。第一次使用时，由用户在客户端填写信任的HTTPS站点及自己的CPA API Key。
+本项目不内置真实服务器、默认用户或密钥。第一次使用时，由用户填写信任的 HTTPS 站点，再按服务类型登录。
 
-- 服务地址仅保存在当前Windows用户的 `HKCU\Software\CPAplusQuota\ServerUrl`。地址不得含路径、查询参数、片段或URL登录信息。
+- 服务地址保存在当前 Windows 用户的注册表。CPA 使用 `HKCU\Software\CPAplusQuota\ServerUrl`，Sub2 使用同目录的 `Sub2ServerUrl`。地址不得含路径、查询参数、片段或URL登录信息。
 - 显示方式保存在同目录的 `DisplayMode` 数值中，便于下次启动继续沿用；该选项不含账号或密钥。
 - 可选贴边收纳的开关保存在同一注册表位置的 `EdgeAutoHide` 中；不含账号、密钥或窗口活动记录。拖动位置仅在当前运行期间保留。
 - API Key通过HTTPS请求的Authorization Bearer头发送给所配置的服务。保持系统证书验证，禁止跨站重定向；切换服务时不会自动使用上一站点的密钥。
