@@ -124,7 +124,7 @@
     <StackPanel x:Name="HomePage">
       <Border x:Name="MainCard" Background="{DynamicResource Card}" BorderBrush="{DynamicResource Stroke}" BorderThickness="1" CornerRadius="12" Padding="17,16,17,15">
         <StackPanel>
-          <DockPanel>
+          <DockPanel x:Name="AccountHeader">
             <Border x:Name="StateBadge" DockPanel.Dock="Right" CornerRadius="5" Padding="7,3" VerticalAlignment="Center"><TextBlock x:Name="AccountState" FontSize="12"/></Border>
             <TextBlock x:Name="AccountName" FontSize="17" FontWeight="Medium" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"/>
           </DockPanel>

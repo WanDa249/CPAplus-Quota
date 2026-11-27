@@ -86,7 +86,7 @@ internal static class AccountPresentation
     internal static string[] QuotaParts(QuotaAccount a,bool compact)
     {
         if(a.personalQuota)
-            return new[]{a.weekly==null?"Sub2 未分配":(compact?"Sub2 ":"Sub2 "+a.quotaPeriod+" ")+Percent(a.weekly)};
+            return new[]{a.weekly==null?"未分配":(a.quotaPeriod=="个人周额度"?"周":"周期")+" "+Percent(a.weekly)};
         var parts=new List<string>();string gap=compact?"":" ";
         if(a.fiveHour!=null)parts.Add("5h"+gap+Percent(a.fiveHour));
         if(a.weekly!=null)parts.Add("周"+gap+Percent(a.weekly));

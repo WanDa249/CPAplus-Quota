@@ -86,11 +86,19 @@ internal static class Sub2QuotaProbe
                     popup.SetSource(ExampleSub2Origin,true,null);
                     popup.SetData(result);
                     var root = (FrameworkElement)typeof(QuotaPopup).GetField("root",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(popup);
-                    Check(((TextBlock)root.FindName("WeekTitle")).Text=="个人周额度" &&
+                    Check(((TextBlock)root.FindName("WeekTitle")).Text=="本周剩余" &&
                           ((TextBlock)root.FindName("WeekValue")).Text=="75%", "WPF card shows personal weekly quota");
                     Check(((StackPanel)root.FindName("FiveMetric")).Visibility==Visibility.Collapsed &&
                           ((WrapPanel)root.FindName("RoutingActions")).Visibility==Visibility.Collapsed, "Sub2 card hides five-hour and routing controls");
                     Check(((TextBlock)root.FindName("CacheNote")).Text.Contains("待核对暂扣"), "WPF card shows frozen detail");
+                    Check(((DockPanel)root.FindName("AccountHeader")).Visibility==Visibility.Collapsed &&
+                          ((Border)root.FindName("StateBadge")).Visibility==Visibility.Collapsed,
+                          "Sub2 detail omits the repeated account heading and badge");
+                    Check(((TextBlock)root.FindName("FailureText")).Visibility==Visibility.Collapsed,
+                          "the success layout has no empty feedback row");
+                    Check(AccountPresentation.QuotaParts(account,false).Single()=="周 75%" &&
+                          AccountPresentation.QuotaParts(account,true).Single()=="周 75%",
+                          "taskbar uses the same short weekly label at both widths");
                     popup.SetData(new QuotaResult { accounts = new List<QuotaAccount>{
                         new QuotaAccount { alias="cpa-test", weekly=new QuotaWindow(), supported=true } },
                         selection=new AccountSelection { mode="auto" } });

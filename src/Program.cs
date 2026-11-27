@@ -343,7 +343,7 @@ internal sealed class TrayContext : ApplicationContext
         readingCache=!manual;form.SetBusy(manual);
         try
         {
-            if(manual)form.SetReadFeedback("正在查询额度…");
+            if(manual&&!useSub2)form.SetReadFeedback("正在查询额度…");
             var alias=strip.SelectedAlias;
             var data = useSub2 ? await sub2.ReadAsync(cancellation.Token)
                 : manual&&alias!=null?await api.RefreshAsync(key,alias,cancellation.Token):await api.ReadAsync(key,cancellation.Token);
@@ -352,7 +352,7 @@ internal sealed class TrayContext : ApplicationContext
             if(data.selection!=null&&data.selection.mode=="manual")strip.SelectAccount(data.selection.alias);
             else if(data.selection!=null)strip.SelectDefaultAccount();
             form.ShowAccounts(data,strip.SelectedAlias);
-            if(manual)form.SetReadFeedback(AccountPresentation.RefreshFeedback(data));
+            if(manual&&!useSub2)form.SetReadFeedback(AccountPresentation.RefreshFeedback(data));
             tray.Text = useSub2 ? "Sub2 额度 · 个人预算" : "CPAplus 额度 · " + data.accounts.Count + " 个绑定账号";
         }
         catch (QuotaAuthException error)

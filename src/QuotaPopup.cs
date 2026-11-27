@@ -226,10 +226,10 @@ internal sealed class QuotaPopup : Window
             BeginAnimation(HeightProperty,animation);
         }else {Height=target;BeginAnimation(HeightProperty,null);}
     }
-    internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Visibility=Visibility.Hidden;Render();}
+    internal void SetData(QuotaResult next){data=next;B<TextBlock>("FailureText").Text="";B<TextBlock>("FailureText").Visibility=Visibility.Hidden;Render();}
     internal void SetAccounts(QuotaResult next,string alias){selected=alias;SetData(next);}
     internal void SetPrimary(string alias){if(selected==alias)return;selected=alias;Render();}
-    internal void ClearData(){data=null;selected=null;noteAlias=null;expanded.Clear();B<Expander>("OtherAccounts").IsExpanded=false;Render();}
+    internal void ClearData(){data=null;selected=null;noteAlias=null;expanded.Clear();B<TextBlock>("FailureText").Text="";B<TextBlock>("FailureText").Visibility=Visibility.Hidden;B<Expander>("OtherAccounts").IsExpanded=false;Render();}
     internal void SetPinned(bool value){Topmost=value||edgeDock.Docked;B<CheckBox>("PinSetting").IsChecked=value;}
     internal void SetStartup(bool value){B<CheckBox>("StartupSetting").IsChecked=value;}
     internal void SetPaused(bool value){paused=value;Render();}
@@ -403,7 +403,7 @@ internal sealed class QuotaPopup : Window
     {
         B<TextBlock>("FailureText").Text=text;
         B<TextBlock>("FailureText").Foreground=Resource("Muted");
-        B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?Visibility.Hidden:Visibility.Visible;
+        B<TextBlock>("FailureText").Visibility=string.IsNullOrEmpty(text)?(sub2Mode?Visibility.Collapsed:Visibility.Hidden):Visibility.Visible;
         if(B<StackPanel>("SettingsPage").Visibility==Visibility.Visible)B<TextBlock>("SettingsNotice").Text=text;
     }
     internal void SetBusy(bool value){busy=value;B<Button>("RefreshButton").IsEnabled=!busy;B<Button>("RefreshButton").Content=busy?"查询中…":"刷新";RenderOthers();RenderRouting();}
@@ -422,15 +422,31 @@ internal sealed class QuotaPopup : Window
     private void Render()
     {
         var a=MainAccount;bool empty=a==null;
+        bool personal=!empty&&a.personalQuota;
+        bool compact=sub2Mode||personal;
+        if(B<StackPanel>("HomePage").Visibility==Visibility.Visible)
+            B<TextBlock>("Heading").Text=compact?"Sub2 额度":"Codex 额度";
+        B<DockPanel>("AccountHeader").Visibility=personal&&a.weekly!=null?Visibility.Collapsed:Visibility.Visible;
+        B<Border>("StateBadge").Visibility=personal?Visibility.Collapsed:Visibility.Visible;
+        B<Grid>("Metrics").Margin=new Thickness(0,personal?0:19,0,0);
+        B<TextBlock>("WeekValue").FontSize=personal?30:24;
+        var refresh=B<Button>("RefreshButton");
+        refresh.Background=compact?Resource("Card"):Brushes.Transparent;
+        refresh.BorderBrush=compact?Resource("Stroke"):Brushes.Transparent;
+        refresh.ToolTip=compact?"刷新个人额度":"刷新当前主账号额度，查询期间可继续浏览或收起窗口";
+        var feedback=B<TextBlock>("FailureText");
+        if(feedback.Visibility!=Visibility.Visible)
+            feedback.Visibility=compact?Visibility.Collapsed:Visibility.Hidden;
         B<TextBlock>("AccountName").ToolTip=empty?null:AccountNames.Label(a);
-        B<TextBlock>("AccountName").Text=empty?(paused?"等待 Codex":"还没有账号"):AccountNames.Label(a);
+        B<TextBlock>("AccountName").Text=empty?(paused?"等待 Codex":compact?"尚未连接":"还没有账号"):personal?"暂无额度":AccountNames.Label(a);
         B<TextBlock>("AccountState").Text=empty?(paused?"已暂停":sub2Mode?"请登录 Sub2 成员账号":"在设置中连接你的密钥"):AccountPresentation.State(a);
         B<TextBlock>("AccountState").Foreground=!empty&&AccountPresentation.Usable(a)?Resource("Accent"):Resource("Muted");
         B<System.Windows.Controls.Border>("StateBadge").Background=Brush(!empty&&AccountPresentation.Usable(a)?light?"#12345F49":"#184FA97E":light?"#1077808C":"#2077808C");
         B<Grid>("Metrics").Visibility=empty||!a.supported||(a.personalQuota&&a.weekly==null)?Visibility.Collapsed:Visibility.Visible;
         B<TextBlock>("UnavailableHint").Visibility=!empty&&(!a.supported||!AccountPresentation.Usable(a))?Visibility.Visible:Visibility.Collapsed;
         B<TextBlock>("UnavailableHint").Text=!empty&&!a.supported?"此账号暂不支持额度查询":"上方为最近记录，账号当前不参与调用。";
-        B<TextBlock>("UpdatedText").Text=empty?(paused?"Codex 启动后自动更新":"尚未连接"):AccountPresentation.Updated(a.lastSuccessAt);
+        string updated=empty?(paused?"Codex 启动后自动更新":"尚未连接"):AccountPresentation.Updated(a.lastSuccessAt);
+        B<TextBlock>("UpdatedText").Text=compact?updated.Replace("额度更新于 ","更新于 "):updated;
         string cache=empty?"":AccountPresentation.CacheState(a);
         if(!empty&&a.personalQuota&&cache.Length==0)cache=a.quotaNote??"";
         bool warning=cache.Length>0;
@@ -438,14 +454,17 @@ internal sealed class QuotaPopup : Window
             var preferred=data.accounts.FirstOrDefault(account=>account.alias==data.selection.alias);
             cache=data.selection.mode=="manual"&&preferred!=null?"优先调用："+AccountNames.Label(preferred):"调用：按优先级自动排序";
         }
-        B<TextBlock>("CacheNote").Text=cache;B<TextBlock>("CacheNote").Visibility=cache.Length==0?Visibility.Hidden:Visibility.Visible;
+        var cacheNote=B<TextBlock>("CacheNote");
+        cacheNote.Text=cache;
+        cacheNote.TextWrapping=compact?TextWrapping.Wrap:TextWrapping.NoWrap;
+        cacheNote.Visibility=cache.Length==0?(compact?Visibility.Collapsed:Visibility.Hidden):Visibility.Visible;
         B<TextBlock>("CacheNote").Foreground=Resource(warning?"Warning":"Muted");
         B<Button>("ConnectButton").Visibility=empty?Visibility.Visible:Visibility.Collapsed;
         B<Button>("SaveNoteButton").IsEnabled=data!=null&&data.accounts.Any(account=>!account.personalQuota&&account.alias==noteAlias);
         if(!empty){
             B<StackPanel>("FiveMetric").Visibility=a.fiveHour==null?Visibility.Collapsed:Visibility.Visible;
             B<Grid>("Metrics").RowDefinitions[1].Height=new GridLength(a.fiveHour==null?0:19);
-            B<TextBlock>("WeekTitle").Text=a.personalQuota?(a.quotaPeriod??"个人额度"):"周额度";
+            B<TextBlock>("WeekTitle").Text=personal?(a.quotaPeriod=="个人周额度"?"本周剩余":"本周期剩余"):"周额度";
             Metric("Five",a,a.fiveHour);Metric("Week",a,a.weekly);
         }
         RenderOthers();
@@ -509,7 +528,7 @@ internal sealed class QuotaPopup : Window
     {
         ClearKeyDraft();editingKey=false;B<StackPanel>("KeyPage").Visibility=Visibility.Collapsed;
         B<StackPanel>("HomePage").Visibility=show?Visibility.Collapsed:Visibility.Visible;B<StackPanel>("SettingsPage").Visibility=show?Visibility.Visible:Visibility.Collapsed;
-        B<Button>("BackButton").Visibility=show?Visibility.Visible:Visibility.Collapsed;B<Button>("SettingsButton").Visibility=show?Visibility.Collapsed:Visibility.Visible;B<TextBlock>("Heading").Text=show?"设置":"Codex 额度";
+        B<Button>("BackButton").Visibility=show?Visibility.Visible:Visibility.Collapsed;B<Button>("SettingsButton").Visibility=show?Visibility.Collapsed:Visibility.Visible;B<TextBlock>("Heading").Text=show?"设置":sub2Mode?"Sub2 额度":"Codex 额度";
         if(show){var a=MainAccount;noteAlias=a==null?null:a.alias;B<TextBox>("NoteInput").Text=a==null?"":AccountNames.Note(a.alias)??"";B<TextBlock>("RawAlias").Text=a==null?"尚无账号":AccountNames.Label(a);B<Button>("SaveNoteButton").IsEnabled=a!=null;B<TextBlock>("SettingsNotice").Text="备注仅保存在这台电脑。";}
     }
     private void SaveNote()

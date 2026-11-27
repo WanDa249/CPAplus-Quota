@@ -4,7 +4,7 @@
 
 Windows 11 任务栏上的轻量 Codex 额度显示工具。查看独立账号的五小时／周额度、重置时间和最近成功更新时间；支持托盘详情、多个绑定账号、本地备注及 Codex 启停联动。
 
-**[下载 v0.1.4-beta](https://github.com/WanDa249/CPAplus-Quota/releases/tag/v0.1.4-beta)** · Windows x64 · 单 EXE · 免安装
+**[下载 v0.1.5-beta](https://github.com/WanDa249/CPAplus-Quota/releases/tag/v0.1.5-beta)** · Windows x64 · 单 EXE · 免安装
 
 这是独立的非官方客户端，不隶属于 OpenAI 或 Microsoft。支持具备额度接口的 CPA 服务和 Sub2 团队版。账号及访问权限由服务管理员提供。
 
